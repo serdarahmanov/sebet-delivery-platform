@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: cart-service
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: cart-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+
+
+
+
+app:
+  kafka:
+    topics:
+      inventory-events: inventory-events
+      product-events: product-events
+      store-events: store-events
