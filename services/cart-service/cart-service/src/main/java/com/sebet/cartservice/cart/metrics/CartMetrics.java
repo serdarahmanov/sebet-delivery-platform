@@ -66,6 +66,21 @@ public class CartMetrics {
         registry.counter("cart.checkout.initiate.basket_empty").increment();
     }
 
+    // ── Checkout confirm not-found ─────────────────────────────────────────────
+
+    /** No RedisCart exists for the user when confirm-checkout is called */
+    public void recordCheckoutConfirmCartNotFound() {
+        registry.counter("cart.checkout.confirm.cart_not_found").increment();
+    }
+
+    /**
+     * Basket is missing or empty when confirm-checkout is called.
+     * Combined counter — both cases block confirmation.
+     */
+    public void recordCheckoutConfirmBasketNotFound() {
+        registry.counter("cart.checkout.confirm.basket_not_found").increment();
+    }
+
     /** Initiation passed all checks — READY response returned to client */
     public void recordCheckoutInitiated(String storeId) {
         registry.counter("cart.checkout.initiated", "store_id", storeId).increment();
@@ -76,7 +91,7 @@ public class CartMetrics {
      * scope: "CART" | "STORE" | "STORE_BASKET" | "ITEM"
      */
     public void recordCheckoutInitiateBlocked(String storeId, String scope) {
-        registry.counter("cart.checkout.initiate_blocked", "store_id", storeId, "scope", scope).increment();
+        registry.counter("cart.checkout.initiate.blocked", "store_id", storeId, "scope", scope).increment();
     }
 
     public void recordCheckoutKafkaPublishFailed(String storeId) {
@@ -101,6 +116,26 @@ public class CartMetrics {
      */
     public void recordCheckoutInitiateValidationExecutionError(String storeId) {
         registry.counter("cart.checkout.initiate.execution_error", "store_id", storeId).increment();
+    }
+
+    /**
+     * Fired when the 8-second gate timeout fires during confirmCheckout() — the
+     * validation future was still running when the deadline expired. Signals a hung
+     * downstream dependency (delivery or promotion service), not thread-pool saturation.
+     * Distinct from execution errors and executor rejections.
+     */
+    public void recordCheckoutConfirmTimeout(String storeId) {
+        registry.counter("cart.checkout.confirm.timeout", "store_id", storeId).increment();
+    }
+
+    /**
+     * Fired when the 8-second gate timeout fires during initiateCheckout() — the
+     * validation future was still running when the deadline expired. Signals a hung
+     * downstream dependency (delivery or promotion service), not thread-pool saturation.
+     * Distinct from execution errors and executor rejections.
+     */
+    public void recordCheckoutInitiateTimeout(String storeId) {
+        registry.counter("cart.checkout.initiate.timeout", "store_id", storeId).increment();
     }
 
     /**
@@ -168,8 +203,8 @@ public class CartMetrics {
     }
 
     /** scope: "CART" | "STORE" | "STORE_BASKET" | "ITEM" */
-    public void recordCheckoutRejected(String storeId, String scope) {
-        registry.counter("cart.checkout.rejected", "store_id", storeId, "scope", scope).increment();
+    public void recordCheckoutConfirmRejected(String storeId, String scope) {
+        registry.counter("cart.checkout.confirm.rejected", "store_id", storeId, "scope", scope).increment();
     }
 
     // ── Response cache ────────────────────────────────────────────────────────
@@ -180,6 +215,18 @@ public class CartMetrics {
 
     public void recordCacheMiss() {
         cacheMiss.increment();
+    }
+
+    // ── CAS conflicts ─────────────────────────────────────────────────────────
+
+    /**
+     * Fired every time a CAS save fails because the cart was concurrently modified
+     * between the read and the write. Maps to HTTP 409. Client should retry.
+     * Distinct from any other 409 source — this counter is the only way to isolate
+     * optimistic-lock contention from generic conflict responses.
+     */
+    public void recordCasConflict() {
+        registry.counter("cart.cas.conflict").increment();
     }
 
     // ── Validation timer ──────────────────────────────────────────────────────
@@ -199,7 +246,7 @@ public class CartMetrics {
 
     /**
      * Fired once per cart validation that returned a degraded promotion response.
-     * @param reason "TIMEOUT" | "CIRCUIT_OPEN" | "ERROR"
+     * @param reason "timeout" | "circuit_open" | "error" | "null_response"
      */
     public void recordPromotionServiceDegraded(String reason) {
         registry.counter("cart.promotion.degraded", "reason", reason).increment();
@@ -244,7 +291,7 @@ public class CartMetrics {
 
     /**
      * @param outcome   "success" | "null_response" | "timeout" | "circuit_open" | "error"
-     * @param operation "availability" | "fee_quote" | "scheduled_quote"
+     * @param operation "availability" | "fee_quote" | "scheduled_quote" | "checkout_quote"
      */
     public void stopDeliveryCallTimer(Timer.Sample sample, String outcome, String operation) {
         sample.stop(Timer.builder("cart.delivery.call.duration")
@@ -256,7 +303,7 @@ public class CartMetrics {
 
     /**
      * @param outcome   "null_response" | "timeout" | "circuit_open" | "error"
-     * @param operation "availability" | "fee_quote" | "scheduled_quote"
+     * @param operation "availability" | "fee_quote" | "scheduled_quote" | "checkout_quote"
      */
     public void recordDeliveryServiceDegraded(String outcome, String operation) {
         registry.counter("cart.delivery.degraded", "outcome", outcome, "operation", operation).increment();
@@ -285,5 +332,91 @@ public class CartMetrics {
     public void recordDeliveryQuoteFetchFailed(String storeId, String type) {
         registry.counter("cart.delivery.quote.fetch_failed",
                 "store_id", storeId, "type", type).increment();
+    }
+
+    // ── Schema migration ──────────────────────────────────────────────────────
+
+    /**
+     * Fired when Jackson throws during cart deserialization from Redis.
+     * The corrupt key is deleted immediately. No version info is available.
+     */
+    public void recordSchemaDeserializationFailed() {
+        registry.counter("cart.schema.deserialization_failed").increment();
+    }
+
+    /**
+     * Fired when a stored cart has {@code schemaVersion < CURRENT_SCHEMA_VERSION}
+     * and migration is about to be attempted.
+     */
+    public void recordSchemaMigrationAttempted(int fromVersion, int toVersion) {
+        registry.counter("cart.schema.migration.attempted",
+                "from_version", String.valueOf(fromVersion),
+                "to_version",   String.valueOf(toVersion)).increment();
+    }
+
+    /**
+     * Fired when the full migration chain completed and the post-migration CAS
+     * save succeeded. The cart is now live at the new schema version.
+     */
+    public void recordSchemaMigrationSucceeded(int fromVersion, int toVersion) {
+        registry.counter("cart.schema.migration.succeeded",
+                "from_version", String.valueOf(fromVersion),
+                "to_version",   String.valueOf(toVersion)).increment();
+    }
+
+    /**
+     * Fired when migration completed in-memory but the CAS save failed because
+     * a concurrent write changed the version key between the read and the save.
+     * The original cart is untouched in Redis — the next read will retry migration.
+     */
+    public void recordSchemaMigrationCasConflict(int fromVersion, int toVersion) {
+        registry.counter("cart.schema.migration.cas_conflict",
+                "from_version", String.valueOf(fromVersion),
+                "to_version",   String.valueOf(toVersion)).increment();
+    }
+
+    /**
+     * Fired when {@code CartSchemaMigrationService.migrate()} throws.
+     * The cart is unreadable — the user will receive an empty cart until the
+     * underlying migration bug is fixed and the key is corrected or evicted.
+     */
+    public void recordSchemaMigrationFailed(int fromVersion, int toVersion) {
+        registry.counter("cart.schema.migration.failed",
+                "from_version", String.valueOf(fromVersion),
+                "to_version",   String.valueOf(toVersion)).increment();
+    }
+
+    /**
+     * Fired when a stored cart has {@code schemaVersion > CURRENT_SCHEMA_VERSION}.
+     * Expected during rolling deployments — a newer pod wrote the cart and this
+     * older pod cannot safely read it. Should drain to zero after rollout completes.
+     *
+     * @param foundVersion the schema version that was found in the stored cart
+     */
+    public void recordSchemaVersionTooNew(int foundVersion) {
+        registry.counter("cart.schema.version_too_new",
+                "found_version", String.valueOf(foundVersion)).increment();
+    }
+
+    /**
+     * Start a wall-clock sample for the full migration chain execution.
+     * Stop via {@link #stopSchemaMigrationTimer} in a finally block.
+     * Covers both successful and failed migrations so slow steps are visible
+     * regardless of outcome.
+     */
+    public Timer.Sample startSchemaMigrationTimer() {
+        return Timer.start(registry);
+    }
+
+    /**
+     * Stop and record the migration chain sample.
+     * Always called from a finally block — covers success, CAS conflict, and exception.
+     */
+    public void stopSchemaMigrationTimer(Timer.Sample sample, int fromVersion, int toVersion) {
+        sample.stop(Timer.builder("cart.schema.migration.duration")
+                .tag("from_version", String.valueOf(fromVersion))
+                .tag("to_version",   String.valueOf(toVersion))
+                .publishPercentileHistogram()
+                .register(registry));
     }
 }

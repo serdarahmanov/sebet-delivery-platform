@@ -84,13 +84,17 @@ public class CheckoutService {
         Timer.Sample timerSample = cartMetrics.startCheckoutConfirmTimer();
         try {
             RedisCart cart = cartRedisRepository.findByUserId(userId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
+                    .orElseThrow(() -> {
+                        cartMetrics.recordCheckoutConfirmCartNotFound();
+                        return new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found");
+                    });
             long expectedVersion = cart.getVersion();
 
             String storeId = resolveStoreId(cart, basketId);
 
             RedisStoreBasket basket = cart.findBasket(storeId);
             if (basket == null || basket.getItems() == null || basket.getItems().isEmpty()) {
+                cartMetrics.recordCheckoutConfirmBasketNotFound();
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Basket not found or empty: " + basketId);
             }
@@ -126,7 +130,8 @@ public class CheckoutService {
                 validationResult = validationFuture.get(8, TimeUnit.SECONDS);
             } catch (TimeoutException e) {
                 validationFuture.cancel(true);
-                log.warn("Checkout confirmation timed out for basketId={}", basketId);
+                cartMetrics.recordCheckoutConfirmTimeout(storeId);
+                log.warn("checkout_confirm_timeout basketId={} storeId={}", basketId, storeId);
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                         "Checkout timed out. Please try again.");
             } catch (InterruptedException e) {
@@ -153,7 +158,7 @@ public class CheckoutService {
             // issue inside the validation result and surfaced by collectBlockingIssues().
 
             if (!blockingIssues.isEmpty()) {
-                cartMetrics.recordCheckoutRejected(storeId, blockingIssues.get(0).scope());
+                cartMetrics.recordCheckoutConfirmRejected(storeId, blockingIssues.get(0).scope());
                 cartResponseCacheService.evict(userId);
                 storeBasketCacheService.evict(userId, storeId);
                 return CheckoutConfirmResponse.rejected(blockingIssues);
@@ -261,7 +266,8 @@ public class CheckoutService {
                 validationResult = validationFuture.get(8, TimeUnit.SECONDS);
             } catch (TimeoutException e) {
                 validationFuture.cancel(true);
-                log.warn("Checkout initiation timed out for basketId={}", basketId);
+                cartMetrics.recordCheckoutInitiateTimeout(storeId);
+                log.warn("checkout_initiate_timeout basketId={} storeId={}", basketId, storeId);
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                         "Checkout timed out. Please try again.");
             } catch (InterruptedException e) {

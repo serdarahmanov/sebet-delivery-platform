@@ -11,10 +11,6 @@ spring:
 services:
   promotion:
     base-url: ${PROMOTION_SERVICE_URL}
-  product:
-    base-url: ${PRODUCT_SERVICE_URL}
-  store:
-    base-url: ${STORE_SERVICE_URL}
   delivery:
     base-url: ${DELIVERY_SERVICE_URL}
 

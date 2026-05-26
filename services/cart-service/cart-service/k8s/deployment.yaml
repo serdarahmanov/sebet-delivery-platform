@@ -27,6 +27,9 @@ spec:
             # OTel Java Agent — reads these at JVM startup via JAVA_TOOL_OPTIONS in the image
             - name: OTEL_SERVICE_NAME
               value: cart-service
+            # Override at deploy time via --set or Helm values; e.g. CI injects the git tag.
+            - name: OTEL_SERVICE_VERSION
+              value: "0.0.1-SNAPSHOT"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector:4317
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
@@ -39,6 +42,10 @@ spec:
               value: none
             - name: OTEL_PROPAGATORS
               value: tracecontext,baggage
+            # Sampling — controlled by the OTel agent, not Spring Boot.
+            # Switch to parentbased_traceidratio + OTEL_TRACES_SAMPLER_ARG=0.1 to reduce volume.
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: deployment.environment=production
             # Application

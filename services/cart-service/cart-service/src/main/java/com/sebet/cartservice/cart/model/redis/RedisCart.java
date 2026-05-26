@@ -18,7 +18,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class RedisCart {
 
-    public static final int CURRENT_SCHEMA_VERSION = 4;
+    public static final int CURRENT_SCHEMA_VERSION = 1;
 
     private int schemaVersion;
     private long version = 0;   // optimistic-lock token; incremented by every successful CAS save

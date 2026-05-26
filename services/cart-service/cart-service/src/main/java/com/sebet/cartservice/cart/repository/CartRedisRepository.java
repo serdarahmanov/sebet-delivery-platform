@@ -1,7 +1,9 @@
 package com.sebet.cartservice.cart.repository;
 
+import com.sebet.cartservice.cart.metrics.CartMetrics;
 import com.sebet.cartservice.cart.migration.CartSchemaMigrationService;
 import com.sebet.cartservice.cart.model.redis.RedisCart;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.ReturnType;
@@ -48,6 +50,7 @@ public class CartRedisRepository {
 
     private final RedisTemplate<String, RedisCart> redisTemplate;
     private final CartSchemaMigrationService cartSchemaMigrationService;
+    private final CartMetrics cartMetrics;
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +62,7 @@ public class CartRedisRepository {
             cart = redisTemplate.opsForValue().get(key);
         } catch (Exception ex) {
             log.error("Failed to deserialize cart for userId={}, discarding. reason={}", userId, ex.getMessage());
+            cartMetrics.recordSchemaDeserializationFailed();
             redisTemplate.delete(List.of(buildCartKey(userId), buildVersionKey(userId)));
             return Optional.empty();
         }
@@ -68,20 +72,29 @@ public class CartRedisRepository {
         }
 
         if (cart.getSchemaVersion() < RedisCart.CURRENT_SCHEMA_VERSION) {
+            int fromVersion = cart.getSchemaVersion();
+            int toVersion   = RedisCart.CURRENT_SCHEMA_VERSION;
             log.warn("Cart schema version is outdated for userId={}, expected={}, found={}, attempting migration.",
-                    userId, RedisCart.CURRENT_SCHEMA_VERSION, cart.getSchemaVersion());
+                    userId, toVersion, fromVersion);
+            cartMetrics.recordSchemaMigrationAttempted(fromVersion, toVersion);
             long versionBeforeMigration = cart.getVersion();
+            Timer.Sample migrationTimer = cartMetrics.startSchemaMigrationTimer();
             try {
                 cart = cartSchemaMigrationService.migrate(cart);
                 if (!saveIfVersionMatches(userId, cart, versionBeforeMigration)) {
                     log.error("Cart migration save conflict for userId={}, returning empty to preserve original data.",
                             userId);
+                    cartMetrics.recordSchemaMigrationCasConflict(fromVersion, toVersion);
                     return Optional.empty();
                 }
+                cartMetrics.recordSchemaMigrationSucceeded(fromVersion, toVersion);
             } catch (Exception ex) {
                 log.error("Cart migration failed for userId={}, returning empty to preserve original data in Redis. reason={}",
                         userId, ex.getMessage());
+                cartMetrics.recordSchemaMigrationFailed(fromVersion, toVersion);
                 return Optional.empty();
+            } finally {
+                cartMetrics.stopSchemaMigrationTimer(migrationTimer, fromVersion, toVersion);
             }
         }
 
@@ -89,6 +102,7 @@ public class CartRedisRepository {
             log.warn("Cart schema version is newer than expected for userId={}, expected={}, found={}. " +
                             "Skipping to avoid data loss during rolling deployment.",
                     userId, RedisCart.CURRENT_SCHEMA_VERSION, cart.getSchemaVersion());
+            cartMetrics.recordSchemaVersionTooNew(cart.getSchemaVersion());
             return Optional.empty();
         }
 

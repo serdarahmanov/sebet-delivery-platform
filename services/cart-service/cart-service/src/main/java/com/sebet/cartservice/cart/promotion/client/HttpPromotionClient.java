@@ -64,7 +64,7 @@ public class HttpPromotionClient implements PromotionClient {
         if (response == null) {
             log.warn("Promotion service returned a null body for cartId={}. Treating as degraded.", request.cartId());
             cartMetrics.stopPromotionCallTimer(sample, "null_response");
-            cartMetrics.recordPromotionServiceDegraded(DegradedReason.NULL_RESPONSE.name());
+            cartMetrics.recordPromotionServiceDegraded(DegradedReason.NULL_RESPONSE.name().toLowerCase());
             return PromotionEvaluationResponse.degraded(request.cartId(), DegradedReason.NULL_RESPONSE);
         }
         cartMetrics.stopPromotionCallTimer(sample, "success");
@@ -74,7 +74,7 @@ public class HttpPromotionClient implements PromotionClient {
     private PromotionEvaluationResponse handleFailure(PromotionEvaluationRequest request, Throwable t, Timer.Sample sample) {
         DegradedReason reason = classify(t);
         cartMetrics.stopPromotionCallTimer(sample, reason.name().toLowerCase());
-        cartMetrics.recordPromotionServiceDegraded(reason.name());
+        cartMetrics.recordPromotionServiceDegraded(reason.name().toLowerCase());
         log.warn("Promotion service unavailable, cartId={}, reason: {}, degradedReason: {}",
                 request.cartId(), t.getMessage(), reason);
         return PromotionEvaluationResponse.degraded(request.cartId(), reason);

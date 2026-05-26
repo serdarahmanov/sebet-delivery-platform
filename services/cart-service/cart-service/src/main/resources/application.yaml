@@ -28,16 +28,10 @@ spring:
       observation-enabled: true
 
 management:
-  tracing:
-    sampling:
-      probability: 1.0   # 100 % — every request is traced, so every histogram sample
-                         # carries a real trace_id as a Prometheus exemplar.
-                         # Lower this (e.g. 0.1) only if trace volume becomes a cost concern;
-                         # at that point exemplar coverage in low-traffic windows will thin out.
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics,kafka
+        include: health,info,prometheus,metrics
   endpoint:
     prometheus:
       enabled: true
@@ -48,7 +42,9 @@ management:
       percentiles-histogram:
         http.server.requests: true
         cart.validation.duration: true
-        kafka.consumer.records-lag-max: true
+        # kafka.consumer.records-lag-max is a Gauge — percentiles-histogram only applies
+        # to Timer and DistributionSummary. This entry was silently ignored by Micrometer.
+        # Consumer lag is observed via the kafka_consumer_records_lag gauge directly.
       percentiles:
         http.server.requests: 0.5, 0.95, 0.99
       slo:
@@ -77,10 +73,6 @@ app:
 services:
   promotion:
     base-url: http://promotion-service:8080
-  product:
-    base-url: http://product-service:8080
-  store:
-    base-url: http://store-service:8080
   delivery:
     base-url: http://delivery-service:8080
 

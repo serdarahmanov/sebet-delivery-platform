@@ -42,9 +42,21 @@ public class MdcRequestFilter extends OncePerRequestFilter {
         try {
             filterChain.doFilter(request, response);
         } finally {
-            log.info("request_completed method={} path={} status={} elapsed_ms={}",
-                    request.getMethod(), request.getRequestURI(),
-                    response.getStatus(), System.currentTimeMillis() - start);
+            int status = response.getStatus();
+            long elapsedMs = System.currentTimeMillis() - start;
+            String method = request.getMethod();
+            String path   = request.getRequestURI();
+
+            if (status >= 500) {
+                log.error("request_completed method={} path={} status={} elapsed_ms={}",
+                        method, path, status, elapsedMs);
+            } else if (status >= 400) {
+                log.warn("request_completed method={} path={} status={} elapsed_ms={}",
+                        method, path, status, elapsedMs);
+            } else {
+                log.info("request_completed method={} path={} status={} elapsed_ms={}",
+                        method, path, status, elapsedMs);
+            }
             MDC.clear();
         }
     }

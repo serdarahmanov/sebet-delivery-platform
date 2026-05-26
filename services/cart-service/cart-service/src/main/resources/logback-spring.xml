@@ -4,7 +4,7 @@
     <springProfile name="!prod">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
-                <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) [%thread] [%X{requestId:-}] [%X{trace_id:-}] [%X{userId:-}] [%X{kafkaTopic:-}:%X{kafkaPartition:-}@%X{kafkaOffset:-}] %cyan(%logger{36}) - %msg%n</pattern>
+                <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) [%thread] [%X{requestId:-}] [%X{trace_id:-}] [%X{userId:-}] [%X{kafkaTopic:-}:%X{kafkaPartition:-}@%X{kafkaOffset:-}] [key=%X{kafkaKey:-}] %cyan(%logger{36}) - %msg%n</pattern>
             </encoder>
         </appender>
 
@@ -38,7 +38,8 @@
         </root>
     </springProfile>
 
-    <logger name="com.sebet.cartservice" level="DEBUG" additivity="false">
+    <!-- Level is set by application.yaml (DEBUG) and overridden by application-prod.yaml (INFO). -->
+    <logger name="com.sebet.cartservice" additivity="false">
         <springProfile name="!prod">
             <appender-ref ref="CONSOLE"/>
         </springProfile>

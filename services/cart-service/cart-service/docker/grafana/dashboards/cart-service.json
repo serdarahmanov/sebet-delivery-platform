@@ -137,8 +137,8 @@
           "legendFormat": "confirmed"
         },
         {
-          "expr": "sum(rate(cart_checkout_rejected_total{application=\"$application\"}[1m])) by (scope)",
-          "legendFormat": "rejected / {{scope}}"
+          "expr": "sum(rate(cart_checkout_confirm_rejected_total{application=\"$application\"}[1m])) by (scope)",
+          "legendFormat": "confirm rejected / {{scope}}"
         }
       ],
       "fieldConfig": { "defaults": { "unit": "ops" } }
@@ -155,7 +155,7 @@
     },
     {
       "id": 10, "type": "timeseries", "title": "Validation Duration",
-      "gridPos": { "x": 0, "y": 27, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 27, "w": 8, "h": 8 },
       "datasource": { "uid": "prometheus" },
       "targets": [
         {
@@ -167,12 +167,41 @@
     },
     {
       "id": 11, "type": "timeseries", "title": "Promo Code Claims",
-      "gridPos": { "x": 12, "y": 27, "w": 12, "h": 8 },
+      "gridPos": { "x": 8, "y": 27, "w": 8, "h": 8 },
       "datasource": { "uid": "prometheus" },
       "targets": [{
         "expr": "sum(rate(cart_promo_claimed_total{application=\"$application\"}[5m])) by (result)",
         "legendFormat": "{{result}}"
       }],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    {
+      "id": 20, "type": "timeseries", "title": "Checkout Initiate Breakdown",
+      "gridPos": { "x": 16, "y": 27, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cart_checkout_initiated_total{application=\"$application\"}[5m]))",
+          "legendFormat": "initiated"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_initiate_blocked_total{application=\"$application\"}[5m])) by (scope)",
+          "legendFormat": "blocked / {{scope}}"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_initiate_cart_not_found_total{application=\"$application\"}[5m]))",
+          "legendFormat": "cart not found"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_initiate_basket_not_found_total{application=\"$application\"}[5m]))",
+          "legendFormat": "basket not found"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_initiate_basket_empty_total{application=\"$application\"}[5m]))",
+          "legendFormat": "basket empty"
+        }
+      ],
       "fieldConfig": { "defaults": { "unit": "ops" } }
     },
 
@@ -183,7 +212,7 @@
       "gridPos": { "x": 0, "y": 36, "w": 12, "h": 8 },
       "datasource": { "uid": "prometheus" },
       "targets": [{
-        "expr": "kafka_consumer_fetch_manager_records_lag{application=\"$application\"}",
+        "expr": "kafka_consumer_records_lag{application=\"$application\"}",
         "legendFormat": "{{topic}} p{{partition}}"
       }],
       "fieldConfig": { "defaults": { "unit": "short" } }
@@ -194,9 +223,174 @@
       "datasource": { "uid": "prometheus" },
       "targets": [{
         "expr": "resilience4j_circuitbreaker_state{application=\"$application\"}",
-        "legendFormat": "{{name}} (0=closed 1=open 2=half-open)"
+        "legendFormat": "{{name}}"
       }],
-      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 2 } }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 2,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red",   "value": 1 },
+              { "color": "yellow","value": 2 }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line+area" }
+          }
+        }
+      }
+    },
+
+    { "type": "row", "title": "Downstream Dependencies", "id": 600, "gridPos": { "x": 0, "y": 44, "w": 24, "h": 1 }, "collapsed": false },
+
+    {
+      "id": 16, "type": "timeseries", "title": "Delivery Call Duration p95 (by operation)",
+      "gridPos": { "x": 0, "y": 45, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(cart_delivery_call_duration_seconds_bucket{application=\"$application\"}[5m])) by (le, operation))",
+        "legendFormat": "p95 {{operation}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 17, "type": "timeseries", "title": "Promotion Call Duration p95 (by outcome)",
+      "gridPos": { "x": 12, "y": 45, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(cart_promotion_call_duration_seconds_bucket{application=\"$application\"}[5m])) by (le, outcome))",
+        "legendFormat": "p95 {{outcome}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 18, "type": "timeseries", "title": "Delivery Failure Rate (by outcome + operation)",
+      "gridPos": { "x": 0, "y": 53, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(cart_delivery_degraded_total{application=\"$application\"}[5m])) by (outcome, operation)",
+        "legendFormat": "{{outcome}} / {{operation}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "red" } } }
+    },
+    {
+      "id": 19, "type": "timeseries", "title": "Promotion Degradation Rate (by reason)",
+      "gridPos": { "x": 12, "y": 53, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(cart_promotion_degraded_total{application=\"$application\"}[5m])) by (reason)",
+        "legendFormat": "{{reason}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "red" } } }
+    },
+
+    {
+      "id": 23, "type": "timeseries", "title": "Delivery Quote Cache & Fetch Rate",
+      "gridPos": { "x": 0, "y": 61, "w": 24, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cart_delivery_quote_cache_hit_total{application=\"$application\"}[5m])) by (store_id)",
+          "legendFormat": "cache hit / {{store_id}}"
+        },
+        {
+          "expr": "sum(rate(cart_delivery_quote_fetched_total{application=\"$application\"}[5m])) by (store_id, type)",
+          "legendFormat": "fetched / {{store_id}} / {{type}}"
+        },
+        {
+          "expr": "sum(rate(cart_delivery_quote_fetch_failed_total{application=\"$application\"}[5m])) by (store_id, type)",
+          "legendFormat": "fetch failed / {{store_id}} / {{type}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    { "type": "row", "title": "Executor & DLT", "id": 500, "gridPos": { "x": 0, "y": 69, "w": 24, "h": 1 }, "collapsed": false },
+
+    {
+      "id": 14, "type": "timeseries", "title": "Checkout Executor Saturation",
+      "gridPos": { "x": 0, "y": 70, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "checkout_executor_queued{application=\"$application\"}",
+          "legendFormat": "queued"
+        },
+        {
+          "expr": "checkout_executor_active{application=\"$application\"}",
+          "legendFormat": "active"
+        },
+        {
+          "expr": "checkout_executor_queue_remaining{application=\"$application\"}",
+          "legendFormat": "queue remaining"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 15, "type": "timeseries", "title": "DLT Activity",
+      "gridPos": { "x": 12, "y": 70, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "increase(kafka_dlt_published_total{application=\"$application\"}[5m])",
+          "legendFormat": "published / {{topic}} / {{reason}}"
+        },
+        {
+          "expr": "increase(kafka_dlt_send_failed_total{application=\"$application\"}[5m])",
+          "legendFormat": "send FAILED / {{topic}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "id": 21, "type": "timeseries", "title": "Checkout Executor Rejections",
+      "gridPos": { "x": 0, "y": 78, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cart_checkout_confirm_executor_rejected_total{application=\"$application\"}[5m]))",
+          "legendFormat": "confirm rejected"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_initiate_executor_rejected_total{application=\"$application\"}[5m]))",
+          "legendFormat": "initiate rejected"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "color": { "mode": "fixed", "fixedColor": "orange" } } }
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "Checkout Errors, Timeouts & Kafka Publish Failures",
+      "gridPos": { "x": 12, "y": 78, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cart_checkout_confirm_timeout_total{application=\"$application\"}[5m]))",
+          "legendFormat": "confirm timeout"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_initiate_timeout_total{application=\"$application\"}[5m]))",
+          "legendFormat": "initiate timeout"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_confirm_execution_error_total{application=\"$application\"}[5m]))",
+          "legendFormat": "confirm execution error"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_initiate_execution_error_total{application=\"$application\"}[5m]))",
+          "legendFormat": "initiate execution error"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_kafka_publish_failed_total{application=\"$application\"}[5m]))",
+          "legendFormat": "kafka publish failed"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "color": { "mode": "fixed", "fixedColor": "red" } } }
     }
 
   ]
