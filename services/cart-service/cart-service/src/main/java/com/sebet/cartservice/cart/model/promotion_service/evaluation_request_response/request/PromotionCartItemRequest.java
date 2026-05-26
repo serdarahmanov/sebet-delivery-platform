@@ -5,6 +5,7 @@ import com.sebet.cartservice.cart.enums.ProductUnit;
 import java.math.BigDecimal;
 
 public record PromotionCartItemRequest(
+        String cartItemId,
         String productId,
         String categoryId,
 

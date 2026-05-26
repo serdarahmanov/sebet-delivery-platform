@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: cart-service
+    static_configs:
+      - targets: ['cart-service:8080']
+    metrics_path: /actuator/prometheus
+    # Relay the instance label so dashboards can filter by pod/host
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ['otel-collector:8889']   # Collector's prometheus exporter
+    metrics_path: /metrics

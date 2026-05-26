@@ -18,10 +18,26 @@ public class ProductEventHandler {
 
     @Transactional
     public void handle(ProductEvent event) {
-
-
-
-
+        if (event == null) {
+            log.warn("Ignoring invalid product event: event is null");
+            return;
+        }
+        if (event.eventId() == null) {
+            log.warn(
+                    "Ignoring invalid product event: missing eventId. eventType={}, aggregateId={}",
+                    event.eventType(),
+                    event.aggregateId()
+            );
+            return;
+        }
+        if (event.eventType() == null || event.eventType().isBlank()) {
+            log.warn(
+                    "Ignoring invalid product event: missing eventType. eventId={}, aggregateId={}",
+                    event.eventId(),
+                    event.aggregateId()
+            );
+            return;
+        }
 
         switch (event.eventType()) {
             case "ProductCreated" -> handleProductCreated(event);
@@ -37,8 +53,11 @@ public class ProductEventHandler {
             case "ProductPriceRemoved" -> handlePriceRemoved(event);
             case "ProductCategoryChanged" -> handleCategoryChanged(event);
 
-            default -> throw new IllegalArgumentException(
-                    "Unsupported product event type: " + event.eventType()
+            default -> log.warn(
+                    "Ignoring unsupported product event type. eventId={}, eventType={}, aggregateId={}",
+                    event.eventId(),
+                    event.eventType(),
+                    event.aggregateId()
             );
         }
     }

@@ -1,0 +1,23 @@
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+
+services:
+  promotion:
+    base-url: ${PROMOTION_SERVICE_URL}
+  product:
+    base-url: ${PRODUCT_SERVICE_URL}
+  store:
+    base-url: ${STORE_SERVICE_URL}
+  delivery:
+    base-url: ${DELIVERY_SERVICE_URL}
+
+logging:
+  level:
+    com.sebet.cartservice: INFO   # overrides DEBUG from application.yaml — prod runs at INFO

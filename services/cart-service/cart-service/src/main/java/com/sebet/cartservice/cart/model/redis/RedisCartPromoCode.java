@@ -1,6 +1,6 @@
 package com.sebet.cartservice.cart.model.redis;
 
-
+import com.sebet.cartservice.cart.enums.PromoCodeState;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -14,16 +14,14 @@ import java.time.Instant;
 @AllArgsConstructor
 public class RedisCartPromoCode {
 
-    private String storeId;
-
     private String code;
+    private PromoCodeState state;
+    private Instant claimedAt;
+    private Instant selectedAt;
 
-    private Instant appliedAt;
-
-    public RedisCartPromoCode(String storeId, String code) {
-        this.storeId = storeId;
-        this.code = code;
-        this.appliedAt = Instant.now();
+    public RedisCartPromoCode(String code) {
+        this.code = code == null ? null : code.trim().toUpperCase();
+        this.state = PromoCodeState.SAVED;
+        this.claimedAt = Instant.now();
     }
-
 }

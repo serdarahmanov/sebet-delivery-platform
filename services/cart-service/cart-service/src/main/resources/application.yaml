@@ -1,12 +1,19 @@
 spring:
   application:
     name: cart-service
+  jpa:
+    properties:
+      jakarta:
+        persistence:
+          query:
+            timeout: 3000   # ms — global safety net; per-query @QueryHints override this
+  datasource:
+    hikari:
+      connection-timeout: 3500  # ms — max wait to acquire a connection from the pool
   data:
     redis:
       host: localhost
       port: 6379
-
-
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
@@ -14,14 +21,90 @@ spring:
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    listener:
+      observation-enabled: true
 
+management:
+  tracing:
+    sampling:
+      probability: 1.0   # 100 % — every request is traced, so every histogram sample
+                         # carries a real trace_id as a Prometheus exemplar.
+                         # Lower this (e.g. 0.1) only if trace volume becomes a cost concern;
+                         # at that point exemplar coverage in low-traffic windows will thin out.
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,kafka
+  endpoint:
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        cart.validation.duration: true
+        kafka.consumer.records-lag-max: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+      slo:
+        http.server.requests: 50ms, 100ms, 200ms, 500ms, 1000ms
 
-
-
+logging:
+  level:
+    com.sebet.cartservice: DEBUG
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.apache.kafka: WARN
 
 app:
+  fees:
+    service-fee: 0.50
   kafka:
     topics:
       inventory-events: inventory-events
       product-events: product-events
       store-events: store-events
+      checkout-events: checkout-events
+      inventory-events-dlt: inventory-events.DLT
+      product-events-dlt: product-events.DLT
+      store-events-dlt: store-events.DLT
+
+services:
+  promotion:
+    base-url: http://promotion-service:8080
+  product:
+    base-url: http://product-service:8080
+  store:
+    base-url: http://store-service:8080
+  delivery:
+    base-url: http://delivery-service:8080
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      promotionService:
+        slow-call-duration-threshold: 300ms
+        slow-call-rate-threshold: 60
+        failure-rate-threshold: 50
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+      deliveryService:
+        slow-call-duration-threshold: 400ms
+        slow-call-rate-threshold: 70
+        failure-rate-threshold: 50
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+

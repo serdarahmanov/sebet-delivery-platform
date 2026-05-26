@@ -1,11 +1,23 @@
 package com.sebet.cartservice.cart.model.promotion_service.evaluation_request_response.response;
 
+import com.sebet.cartservice.cart.model.promotion_service.evaluation_request_response.request.PromotionEvaluationRequest;
+
+import java.time.Instant;
 import java.util.List;
 
 public record PromotionEvaluationResponse(
         String cartId,
-        List<PromotionStoreBasketResult> storeBasketResults
+        List<PromotionStoreBasketResult> storeBasketResults,
+        boolean degraded,
+        DegradedReason degradedReason
 ) {
+    public static PromotionEvaluationResponse empty(String cartId) {
+        return new PromotionEvaluationResponse(cartId, List.of(), false, null);
+    }
+
+    public static PromotionEvaluationResponse degraded(String cartId, DegradedReason reason) {
+        return new PromotionEvaluationResponse(cartId, List.of(), true, reason);
+    }
 }
 
 

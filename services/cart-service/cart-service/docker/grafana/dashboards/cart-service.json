@@ -1,0 +1,203 @@
+{
+  "title": "Cart Service",
+  "uid": "cart-service",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "application",
+        "type": "constant",
+        "current": { "value": "cart-service" },
+        "hide": 2
+      }
+    ]
+  },
+  "panels": [
+
+    { "type": "row", "title": "HTTP", "id": 100, "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }, "collapsed": false },
+
+    {
+      "id": 1, "type": "timeseries", "title": "Request Rate (req/s)",
+      "gridPos": { "x": 0, "y": 1, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(http_server_requests_seconds_count{application=\"$application\"}[1m])) by (uri, method, status)",
+        "legendFormat": "{{method}} {{uri}} {{status}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Error Rate (5xx)",
+      "gridPos": { "x": 8, "y": 1, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(http_server_requests_seconds_count{application=\"$application\", status=~\"5..\"}[1m]))",
+        "legendFormat": "5xx errors"
+      }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "red" } } }
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Latency Percentiles",
+      "gridPos": { "x": 16, "y": 1, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket{application=\"$application\"}[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{application=\"$application\"}[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application=\"$application\"}[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    { "type": "row", "title": "JVM", "id": 200, "gridPos": { "x": 0, "y": 9, "w": 24, "h": 1 }, "collapsed": false },
+
+    {
+      "id": 4, "type": "timeseries", "title": "Heap Memory",
+      "gridPos": { "x": 0, "y": 10, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(jvm_memory_used_bytes{application=\"$application\", area=\"heap\"})",
+          "legendFormat": "used"
+        },
+        {
+          "expr": "sum(jvm_memory_max_bytes{application=\"$application\", area=\"heap\"})",
+          "legendFormat": "max"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "GC Pause Rate",
+      "gridPos": { "x": 8, "y": 10, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(jvm_gc_pause_seconds_sum{application=\"$application\"}[1m])) by (action, cause)",
+        "legendFormat": "{{action}} / {{cause}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "JVM Threads",
+      "gridPos": { "x": 16, "y": 10, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "jvm_threads_live_threads{application=\"$application\"}",
+          "legendFormat": "live"
+        },
+        {
+          "expr": "jvm_threads_daemon_threads{application=\"$application\"}",
+          "legendFormat": "daemon"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+
+    { "type": "row", "title": "Business", "id": 300, "gridPos": { "x": 0, "y": 18, "w": 24, "h": 1 }, "collapsed": false },
+
+    {
+      "id": 7, "type": "timeseries", "title": "Cart Operations",
+      "gridPos": { "x": 0, "y": 19, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cart_items_added_total{application=\"$application\"}[1m]))",
+          "legendFormat": "items added"
+        },
+        {
+          "expr": "sum(rate(cart_items_removed_total{application=\"$application\"}[1m]))",
+          "legendFormat": "items removed"
+        },
+        {
+          "expr": "sum(rate(cart_basket_cleared_total{application=\"$application\"}[1m]))",
+          "legendFormat": "baskets cleared"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Checkouts",
+      "gridPos": { "x": 8, "y": 19, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(cart_checkout_confirmed_total{application=\"$application\"}[1m]))",
+          "legendFormat": "confirmed"
+        },
+        {
+          "expr": "sum(rate(cart_checkout_rejected_total{application=\"$application\"}[1m])) by (scope)",
+          "legendFormat": "rejected / {{scope}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Response Cache Hit Ratio",
+      "gridPos": { "x": 16, "y": 19, "w": 8, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(cart_response_cache_hit_total{application=\"$application\"}[5m])) / (sum(rate(cart_response_cache_hit_total{application=\"$application\"}[5m])) + sum(rate(cart_response_cache_miss_total{application=\"$application\"}[5m])))",
+        "legendFormat": "hit ratio"
+      }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Validation Duration",
+      "gridPos": { "x": 0, "y": 27, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(cart_validation_duration_seconds_bucket{application=\"$application\"}[5m])) by (le, blocking_issues))",
+          "legendFormat": "p95 blocking={{blocking_issues}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Promo Code Claims",
+      "gridPos": { "x": 12, "y": 27, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(cart_promo_claimed_total{application=\"$application\"}[5m])) by (result)",
+        "legendFormat": "{{result}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    { "type": "row", "title": "Kafka & Circuit Breakers", "id": 400, "gridPos": { "x": 0, "y": 35, "w": 24, "h": 1 }, "collapsed": false },
+
+    {
+      "id": 12, "type": "timeseries", "title": "Kafka Consumer Lag",
+      "gridPos": { "x": 0, "y": 36, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "kafka_consumer_fetch_manager_records_lag{application=\"$application\"}",
+        "legendFormat": "{{topic}} p{{partition}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "Circuit Breaker State",
+      "gridPos": { "x": 12, "y": 36, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus" },
+      "targets": [{
+        "expr": "resilience4j_circuitbreaker_state{application=\"$application\"}",
+        "legendFormat": "{{name}} (0=closed 1=open 2=half-open)"
+      }],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 2 } }
+    }
+
+  ]
+}

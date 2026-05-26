@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 
 public record StoreBasketSummary(
         BigDecimal itemsCount,
-        BigDecimal uniqueItemsCount,
+        int uniqueItemsCount,
 
         BigDecimal itemsSubtotal,
 
@@ -16,7 +16,6 @@ public record StoreBasketSummary(
         StoreBasketDeliverySummary delivery,
 
         BigDecimal serviceFee,
-        BigDecimal smallOrderFee,
 
         BigDecimal grandTotal
 

@@ -1,9 +1,27 @@
 package com.sebet.cartservice.cart.mapper;
 
-import com.sebet.cartservice.cart.dto.CartResponse;
+
+import com.sebet.cartservice.cart.dto.Cart;
 import com.sebet.cartservice.cart.enums.FreeDeliveryReason;
 import com.sebet.cartservice.cart.enums.IssueSeverity;
-import com.sebet.cartservice.cart.model.*;
+import com.sebet.cartservice.cart.enums.ItemDiscountType;
+import com.sebet.cartservice.cart.enums.PromoCodeState;
+import com.sebet.cartservice.cart.enums.ScheduleType;
+import com.sebet.cartservice.cart.model.CartDeliveryAddress;
+import com.sebet.cartservice.cart.model.CartDeliveryOption;
+import com.sebet.cartservice.cart.model.CartDeliveryQuote;
+import com.sebet.cartservice.cart.model.redis.RedisDeliveryQuote;
+import com.sebet.cartservice.cart.model.redis.RedisStoreBasket;
+import com.sebet.cartservice.cart.model.CartIssue;
+import com.sebet.cartservice.cart.model.CartItem;
+import com.sebet.cartservice.cart.model.CartItemDiscount;
+import com.sebet.cartservice.cart.model.CartPromoCodeResponse;
+import com.sebet.cartservice.cart.model.StoreBasket;
+import com.sebet.cartservice.cart.model.promotion_service.evaluation_request_response.response.PromoCodeType;
+import com.sebet.cartservice.cart.model.promotion_service.evaluation_request_response.response.PromotionItemDiscountResult;
+import com.sebet.cartservice.cart.model.StoreBasketDeliverySummary;
+import com.sebet.cartservice.cart.model.StoreBasketIssue;
+import com.sebet.cartservice.cart.model.StoreBasketSummary;
 import com.sebet.cartservice.cart.model.cart_calculation.CartCalculationResult;
 import com.sebet.cartservice.cart.model.cart_calculation.ItemCalculation;
 import com.sebet.cartservice.cart.model.cart_calculation.StoreBasketCalculation;
@@ -11,92 +29,83 @@ import com.sebet.cartservice.cart.model.cart_validation.CartValidationResult;
 import com.sebet.cartservice.cart.model.cart_validation.ProductSnapshot;
 import com.sebet.cartservice.cart.model.cart_validation.PromoCodeValidationResult;
 import com.sebet.cartservice.cart.model.cart_validation.StoreSnapshot;
+import com.sebet.cartservice.cart.model.item.ItemIssue;
 import com.sebet.cartservice.cart.model.redis.RedisCart;
 import com.sebet.cartservice.cart.model.redis.RedisCartItem;
+import com.sebet.cartservice.cart.model.redis.RedisCartPromoCode;
+import com.sebet.cartservice.cart.model.redis.RedisStoreBasket;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+
 
 @Component
 public class RedisCartMapper {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
 
-    public CartResponse toCartResponse(
+    public Cart toCart(
             RedisCart redisCart,
             CartValidationResult validationResult,
             CartCalculationResult calculationResult
     ) {
-        String cartId = resolveCartId(redisCart);
-        Instant createdAt = resolveCreatedAt(redisCart);
-        Instant updatedAt = resolveUpdatedAt(redisCart);
-
-        List<RedisCartItem> items = getCartItemsOrEmpty(redisCart);
-
-        Map<String, List<RedisCartItem>> itemsByStoreId =
-                groupItemsByStoreId(items);
-
-        List<CartStoreBasket> storeBaskets =
-                mapStoreBaskets(
-                        cartId,
-                        createdAt,
-                        updatedAt,
-                        itemsByStoreId,
-                        validationResult,
-                        calculationResult
-                );
-
-        List<CartIssue> cartIssues =
-                validationResult.cartIssues() == null
-                        ? List.of()
-                        : validationResult.cartIssues();
-
-        BigDecimal totalBasketsCount =
-                calculateTotalBasketsCount(storeBaskets);
-
-        return new CartResponse(
-                cartId,
-                storeBaskets,
-                totalBasketsCount,
-                cartIssues,
-                createdAt,
-                updatedAt
-        );
+        return toCart(redisCart, validationResult, calculationResult, null);
     }
 
-
-
-
-
-
-
-    private List<CartStoreBasket> mapStoreBaskets(
-            String cartId,
-            Instant createdAt,
-            Instant updatedAt,
-            Map<String, List<RedisCartItem>> itemsByStoreId,
+    public Cart toCart(
+            RedisCart redisCart,
             CartValidationResult validationResult,
-            CartCalculationResult calculationResult
+            CartCalculationResult calculationResult,
+            Set<String> affectedStoreIds
     ) {
-        return itemsByStoreId.entrySet()
-                .stream()
-                .map(entry -> mapStoreBasket(
+        String cartId = redisCart != null ? redisCart.getCartId() : null;
+        Instant createdAt = redisCart != null ? redisCart.getCreatedAt() : null;
+        Instant updatedAt = redisCart != null ? redisCart.getUpdatedAt() : null;
+
+        List<RedisStoreBasket> baskets = redisCart == null || redisCart.getStoreBaskets() == null
+                ? List.of()
+                : redisCart.getStoreBaskets();
+        if (affectedStoreIds != null && !affectedStoreIds.isEmpty()) {
+            baskets = baskets.stream()
+                    .filter(b -> b != null && affectedStoreIds.contains(b.getStoreId()))
+                    .toList();
+        }
+
+        List<StoreBasket> storeBaskets = baskets.stream()
+                .filter(b -> b != null && b.getStoreId() != null)
+                .map(b -> mapStoreBasket(
+                        redisCart,
                         cartId,
-                        entry.getKey(),
-                        entry.getValue(),
+                        b.getStoreId(),
+                        b.getItems() != null ? b.getItems() : List.of(),
                         createdAt,
                         updatedAt,
                         validationResult,
                         calculationResult
                 ))
                 .toList();
+
+        List<CartIssue> cartIssues = validationResult == null
+                ? List.of()
+                : validationResult.getCartIssues();
+
+        return new Cart(
+                cartId,
+                storeBaskets,
+                BigDecimal.valueOf(storeBaskets.size()),
+                cartIssues,
+                createdAt,
+                updatedAt
+        );
     }
 
-    private CartStoreBasket mapStoreBasket(
+    private StoreBasket mapStoreBasket(
+            RedisCart redisCart,
             String cartId,
             String storeId,
             List<RedisCartItem> redisItems,
@@ -105,46 +114,55 @@ public class RedisCartMapper {
             CartValidationResult validationResult,
             CartCalculationResult calculationResult
     ) {
-        StoreSnapshot store =
-                validationResult.storesByStoreId().get(storeId);
+        StoreSnapshot store = validationResult == null
+                ? null
+                : validationResult.storesByStoreId().get(storeId);
 
-        StoreBasketCalculation basketCalculation =
-                calculationResult.storeBasketCalculationsByStoreId().get(storeId);
+        StoreBasketCalculation basketCalculation = calculationResult == null
+                ? null
+                : calculationResult.storeBasketCalculationsByStoreId().get(storeId);
 
         List<CartItem> items = redisItems.stream()
-                .map(redisItem -> mapCartItem(
-                        redisItem,
-                        validationResult,
-                        calculationResult,
-                        updatedAt
-                ))
+                .map(item -> mapCartItem(item, validationResult, calculationResult, updatedAt))
                 .toList();
 
-        StoreBasketSummary summary =
-                mapBasketSummary(basketCalculation);
+        List<StoreBasketIssue> issues = validationResult == null
+                ? List.of()
+                : validationResult.storeBasketIssuesByStoreId().getOrDefault(storeId, List.of());
 
-        StoreBasketPromoCode promoCode =
-                mapBasketPromoCode(storeId, validationResult, calculationResult);
+        List<com.sebet.cartservice.cart.model.store.StoreIssue> storeIssues = validationResult == null
+                ? List.of()
+                : validationResult.getStoreIssues(storeId);
 
-        List<StoreBasketIssue> issues =
-                validationResult.storeBasketIssuesByStoreId()
-                        .getOrDefault(storeId, List.of());
+        List<CartPromoCodeResponse> promoCodes = mapBasketPromoCodes(storeId, redisCart, validationResult);
 
-        boolean isAvailable = isStoreAvailable(store);
+        String addressId = redisCart != null ? redisCart.getBasketAddress(storeId) : null;
 
-        boolean canCheckout =
-                canStoreBasketCheckout(issues, items, promoCode);
+        com.sebet.cartservice.cart.model.redis.RedisStoreBasket redisBasket =
+                redisCart != null ? redisCart.findBasket(storeId) : null;
+        CartDeliveryQuote deliveryQuote = mapDeliveryQuote(redisBasket);
+        List<CartDeliveryOption> availableDeliveryOptions = mapDeliveryOptions(redisBasket);
+        String selectedDeliveryMethodId = redisBasket != null ? redisBasket.getSelectedDeliveryMethodId() : null;
 
-        return new CartStoreBasket(
-                buildBasketId(cartId, storeId),
+        ScheduleType scheduleType = redisBasket != null && redisBasket.getScheduleType() != null
+                ? redisBasket.getScheduleType() : ScheduleType.ASAP;
+
+        return new StoreBasket(
+                cartId + ":" + storeId,
                 storeId,
                 store != null ? store.name() : null,
-                isAvailable,
-                canCheckout,
-                null,
-                summary,
-                promoCode,
+                store != null && store.exists() && store.open(),
+                canStoreBasketCheckout(issues, items),
+                addressId,
+                deliveryQuote,
+                selectedDeliveryMethodId,
+                availableDeliveryOptions,
+                scheduleType,
+                redisBasket != null ? redisBasket.getScheduledFor() : null,
+                mapBasketSummary(basketCalculation),
+                promoCodes,
                 issues,
+                storeIssues,
                 items,
                 createdAt,
                 updatedAt
@@ -157,259 +175,258 @@ public class RedisCartMapper {
             CartCalculationResult calculationResult,
             Instant cartUpdatedAt
     ) {
-        ProductSnapshot product =
-                validationResult.productsByProductId()
-                        .get(redisItem.getProductId());
+        ProductSnapshot product = validationResult == null
+                ? null
+                : validationResult.productsByProductStore().get(
+                        new CartValidationResult.ProductStoreKey(redisItem.getProductId(), redisItem.getStoreId()));
 
-        ItemCalculation calculation =
-                calculationResult.itemCalculationsByCartItemId()
-                        .get(redisItem.getCartItemId());
+        ItemCalculation calculation = calculationResult == null
+                ? null
+                : calculationResult.itemCalculationsByCartItemId().get(redisItem.getCartItemId());
 
-        List<CartItemIssues> issues =
-                validationResult.itemIssuesByCartItemId()
-                        .getOrDefault(redisItem.getCartItemId(), List.of());
-
-        boolean available =
-                product != null && product.exists() && product.available();
-
-        boolean isValid =
-                !hasBlockingItemIssues(issues);
+        List<ItemIssue> issues = validationResult == null
+                ? List.of()
+                : validationResult.itemIssuesByCartItemId().getOrDefault(redisItem.getCartItemId(), List.of());
 
         return new CartItem(
                 redisItem.getCartItemId(),
                 redisItem.getProductId(),
                 product != null ? product.sku() : null,
-
                 redisItem.getStoreId(),
-
                 product != null ? product.name() : null,
                 product != null ? product.brandName() : null,
                 product != null ? product.categoryName() : null,
                 product != null ? product.imageUrl() : null,
-
                 calculation != null ? calculation.quantity() : redisItem.getQuantity(),
-
                 product != null ? product.unit() : null,
                 product != null ? product.minQuantity() : null,
                 product != null ? product.maxQuantity() : null,
                 product != null ? product.quantityStep() : null,
-
                 calculation != null ? calculation.unitPrice() : ZERO,
                 product != null ? product.originalPrice() : null,
-
                 calculation != null ? calculation.subtotal() : ZERO,
                 calculation != null ? calculation.itemDiscountTotal() : ZERO,
                 calculation != null ? calculation.finalTotal() : ZERO,
-
-                List.of(), // discounts, later for item-level campaigns
-
-                available,
-                product != null && product.availableQuantity() != null
-                        ? product.availableQuantity().intValue()
-                        : null,
+                toItemDiscounts(redisItem.getCartItemId(), validationResult, calculation != null ? calculation.unitPrice() : ZERO),
+                product != null && product.available(),
+                product != null && product.availableQuantity() != null ? product.availableQuantity().intValue() : null,
                 product != null ? product.stockStatus() : null,
-
-                isValid,
+                !hasBlockingItemIssues(issues),
                 issues,
-
                 redisItem.getAddedAt(),
-                redisItem.getUpdatedAt() != null
-                        ? redisItem.getUpdatedAt()
-                        : cartUpdatedAt
+                redisItem.getUpdatedAt() != null ? redisItem.getUpdatedAt() : cartUpdatedAt
         );
     }
 
-    private StoreBasketSummary mapBasketSummary(
-            StoreBasketCalculation calculation
-    ) {
+    private StoreBasketSummary mapBasketSummary(StoreBasketCalculation calculation) {
         if (calculation == null) {
             return new StoreBasketSummary(
-                    ZERO,
-                    ZERO,
-                    ZERO,
-                    ZERO,
-                    ZERO,
-                    ZERO,
-                    ZERO,
-                    null,
-                    ZERO,
-                    ZERO,
-                    ZERO
+                    ZERO, 0, ZERO, ZERO, ZERO, ZERO, ZERO, null, ZERO, null
             );
         }
 
-        BigDecimal deliveryFeeBeforeDiscount = safe(calculation.deliveryFee());
-        BigDecimal deliveryDiscountTotal = safe(calculation.freeDeliveryDiscount());
-        BigDecimal deliveryFee = deliveryFeeBeforeDiscount.subtract(deliveryDiscountTotal).max(ZERO);
-
-        FreeDeliveryReason freeDeliveryReason = deliveryDiscountTotal.compareTo(ZERO) > 0
-                ? FreeDeliveryReason.THRESHOLD_REACHED
-                : FreeDeliveryReason.THRESHOLD_NOT_REACHED;
+        BigDecimal deliveryFee = calculation.deliveryFee(); // null means fee is unknown
+        BigDecimal deliveryDiscount = safe(calculation.freeDeliveryDiscount());
+        BigDecimal deliveryAfter = deliveryFee != null
+                ? deliveryFee.subtract(deliveryDiscount).max(ZERO)
+                : null;
 
         StoreBasketDeliverySummary deliverySummary = new StoreBasketDeliverySummary(
-                deliveryFeeBeforeDiscount,
                 deliveryFee,
-                deliveryDiscountTotal,
-                freeDeliveryReason
+                deliveryAfter,
+                deliveryDiscount,
+                calculation.freeDeliveryReason() != null
+                        ? calculation.freeDeliveryReason()
+                        : FreeDeliveryReason.THRESHOLD_NOT_REACHED
         );
 
         return new StoreBasketSummary(
                 safe(calculation.itemsCount()),
-                safe(calculation.uniqueItemsCount()),
+                calculation.uniqueItemsCount(),
                 safe(calculation.itemsSubtotal()),
                 safe(calculation.itemDiscountTotal()),
                 safe(calculation.promoDiscountTotal()),
-                deliveryDiscountTotal,
+                deliveryDiscount,
                 safe(calculation.totalDiscount()),
                 deliverySummary,
                 safe(calculation.serviceFee()),
-                safe(calculation.smallOrderFee()),
-                safe(calculation.basketTotal())
+                calculation.basketTotal() // null if delivery fee unknown
         );
     }
 
-    private StoreBasketPromoCode mapBasketPromoCode(
+    private List<CartPromoCodeResponse> mapBasketPromoCodes(
             String storeId,
-            CartValidationResult validationResult,
-            CartCalculationResult calculationResult
+            RedisCart redisCart,
+            CartValidationResult validationResult
     ) {
-        PromoCodeValidationResult promoResult =
-                validationResult.promoResultsByStoreId().get(storeId);
+        java.util.Map<String, PromoCodeValidationResult> byCode = new java.util.HashMap<>();
+        java.util.Map<String, PromoCodeState> statesByCode = new java.util.HashMap<>();
 
-        if (promoResult == null) {
+        if (redisCart != null) {
+            RedisStoreBasket basket = redisCart.findBasket(storeId);
+            if (basket != null && basket.getPromoCodes() != null) {
+                for (RedisCartPromoCode promo : basket.getPromoCodes()) {
+                    if (promo == null || promo.getCode() == null) continue;
+                    statesByCode.put(promo.getCode().toUpperCase(), promo.getState() == null ? PromoCodeState.SAVED : promo.getState());
+                }
+            }
+        }
+
+        if (validationResult != null) {
+            for (PromoCodeValidationResult promo : validationResult.promoResultsByStoreId().getOrDefault(storeId, List.of())) {
+                if (promo != null && promo.code() != null) {
+                    byCode.put(promo.code().toUpperCase(), promo);
+                }
+            }
+        }
+
+        for (String code : statesByCode.keySet()) {
+            byCode.putIfAbsent(code, new PromoCodeValidationResult(
+                    storeId,
+                    code,
+                    null,
+                    null,
+                    statesByCode.get(code),
+                    statesByCode.get(code) == PromoCodeState.SELECTED,
+                    false,
+                    false,
+                    ZERO,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    List.of()
+            ));
+        }
+
+        return byCode.values().stream().map(promo -> {
+            PromoCodeState state = statesByCode.getOrDefault(
+                    promo.code() == null ? "" : promo.code().toUpperCase(),
+                    promo.state() == null ? PromoCodeState.SAVED : promo.state()
+            );
+            boolean selected = state == PromoCodeState.SELECTED;
+            return new CartPromoCodeResponse(
+                    promo.code(),
+                    promo.description(),
+                    null,
+                    toResponseType(promo.type()),
+                    promo.selectionType(),
+                    state,
+                    selected,
+                    promo.canBeSelected(),
+                    promo.applied(),
+                    safe(promo.discountValue()),
+                    promo.missingAmountToActivate(),
+                    promo.expiresAt(),
+                    promo.usageLimit(),
+                    promo.usedCount(),
+                    null,
+                    promo.issues()
+            );
+        }).toList();
+    }
+
+    private List<CartItemDiscount> toItemDiscounts(
+            String cartItemId,
+            CartValidationResult validationResult,
+            BigDecimal unitPrice
+    ) {
+        if (validationResult == null) {
+            return List.of();
+        }
+        return validationResult.getItemDiscounts(cartItemId).stream()
+                .filter(r -> r.discounts() != null)
+                .flatMap(r -> r.discounts().stream())
+                .filter(java.util.Objects::nonNull)
+                .map(d -> new CartItemDiscount(
+                        toItemDiscountType(d.type()),
+                        d.name(),
+                        safe(d.discountAmount()),
+                        unitPrice,
+                        unitPrice.subtract(safe(d.discountAmount())).max(ZERO),
+                        null,
+                        null
+                ))
+                .toList();
+    }
+
+    private ItemDiscountType toItemDiscountType(PromoCodeType type) {
+        if (type == null) {
             return null;
         }
-
-        StoreBasketCalculation basketCalculation =
-                calculationResult.storeBasketCalculationsByStoreId().get(storeId);
-
-        BigDecimal discountTotal =
-                basketCalculation != null
-                        ? basketCalculation.promoDiscountTotal()
-                        : ZERO;
-
-        return new StoreBasketPromoCode(
-                promoResult.code(),
-                promoResult.applied(),
-                promoResult.type(),
-                discountTotal,
-                promoResult.description(),
-                promoResult.issues()
-        );
-    }
-
-    private Map<String, List<RedisCartItem>> groupItemsByStoreId(
-            List<RedisCartItem> items
-    ) {
-        if (items == null || items.isEmpty()) {
-            return Map.of();
-        }
-
-        return items.stream()
-                .collect(Collectors.groupingBy(RedisCartItem::getStoreId));
-    }
-
-    private BigDecimal calculateTotalBasketsCount(
-            List<CartStoreBasket> storeBaskets
-    ) {
-        if (storeBaskets == null) {
-            return ZERO;
-        }
-
-        return BigDecimal.valueOf(storeBaskets.size());
-    }
-
-    private boolean isStoreAvailable(StoreSnapshot store) {
-        return store != null && store.exists() && store.open();
+        return switch (type) {
+            case PERCENTAGE -> ItemDiscountType.PERCENTAGE;
+            case FIXED_AMOUNT -> ItemDiscountType.FIXED_AMOUNT;
+            case BUY_X_PAY_Y -> ItemDiscountType.BUY_X_PAY_Y;
+            case FREE_DELIVERY -> null;
+        };
     }
 
     private boolean canStoreBasketCheckout(
             List<StoreBasketIssue> storeIssues,
-            List<CartItem> items,
-            StoreBasketPromoCode promoCode
+            List<CartItem> items
     ) {
-        if (hasBlockingStoreBasketIssues(storeIssues)) {
+        boolean hasBlockingStoreIssue = storeIssues != null
+                && storeIssues.stream().anyMatch(StoreBasketIssue::isBlocking);
+        if (hasBlockingStoreIssue) {
             return false;
         }
 
-        boolean hasBlockingItem = items.stream()
-                .anyMatch(item -> Boolean.FALSE.equals(item.isValid()));
-
+        boolean hasBlockingItem = items != null
+                && items.stream().anyMatch(item -> Boolean.FALSE.equals(item.isValid()));
         if (hasBlockingItem) {
             return false;
-        }
-
-        if (promoCode != null && promoCode.issues() != null) {
-            return promoCode.issues()
-                    .stream()
-                    .noneMatch(issue -> issue.severity() == IssueSeverity.BLOCKING);
         }
 
         return true;
     }
 
-    private boolean hasBlockingItemIssues(List<CartItemIssues> issues) {
-        if (issues == null) {
-            return false;
-        }
-
-        return issues.stream()
-                .anyMatch(issue -> issue.severity() == IssueSeverity.BLOCKING);
-    }
-
-    private boolean hasBlockingStoreBasketIssues(List<StoreBasketIssue> issues) {
-        if (issues == null) {
-            return false;
-        }
-
-        return issues.stream()
-                .anyMatch(issue -> issue.severity() == IssueSeverity.BLOCKING);
-    }
-
-    private String buildBasketId(String cartId, String storeId) {
-        return cartId + ":" + storeId;
-    }
-
-    private String resolveCartId(RedisCart redisCart) {
-        if (redisCart == null || redisCart.getCartId() == null) {
+    private com.sebet.cartservice.cart.model.promotion_service.evaluation_request_response.response.PromoCodeType toResponseType(
+            com.sebet.cartservice.cart.enums.ProductUnavailableReason.PromoCodeType type
+    ) {
+        if (type == null) {
             return null;
         }
-
-        return redisCart.getCartId();
+        return com.sebet.cartservice.cart.model.promotion_service.evaluation_request_response.response.PromoCodeType.valueOf(type.name());
     }
 
-
-
-    private Instant resolveCreatedAt(RedisCart redisCart) {
-        if (redisCart == null) {
-            return null;
-        }
-
-        if (redisCart.getCreatedAt() != null) {
-            return redisCart.getCreatedAt();
-        }
-
-        return redisCart.getUpdatedAt();
+    private CartDeliveryQuote mapDeliveryQuote(RedisStoreBasket basket) {
+        if (basket == null) return null;
+        RedisDeliveryQuote q = basket.getDeliveryQuote();
+        if (q == null) return null;
+        return new CartDeliveryQuote(
+                q.getQuoteId(),
+                q.getExpiresAt(),
+                new CartDeliveryQuote.Fee(q.getAmount(), q.getCurrency(), q.getDisplay()),
+                new CartDeliveryQuote.Eta(q.getEtaMin(), q.getEtaMax(), q.getEtaDisplayLabel())
+        );
     }
 
-
-
-    private Instant resolveUpdatedAt(RedisCart redisCart) {
-        if (redisCart == null) {
-            return null;
-        }
-
-        return redisCart.getUpdatedAt();
+    private List<CartDeliveryOption> mapDeliveryOptions(RedisStoreBasket basket) {
+        if (basket == null) return List.of();
+        RedisDeliveryQuote q = basket.getDeliveryQuote();
+        if (q == null || q.getAvailableOptions() == null) return List.of();
+        return q.getAvailableOptions().stream()
+                .filter(o -> o != null && o.getMethodId() != null)
+                .map(o -> new CartDeliveryOption(
+                        o.getMethodId(),
+                        o.getLabel(),
+                        o.getEtaMin(),
+                        o.getEtaMax(),
+                        o.getEtaDisplayLabel(),
+                        o.getFee(),
+                        o.getCurrency(),
+                        o.getFeeDisplay()
+                ))
+                .toList();
     }
 
+    private boolean hasBlockingItemIssues(List<ItemIssue> issues) {
+        return issues != null && issues.stream().anyMatch(ItemIssue::isBlocking);
+    }
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? ZERO : value;
-    }    private List<RedisCartItem> getCartItemsOrEmpty(RedisCart redisCart) {
-        if (redisCart == null || redisCart.getItems() == null) {
-            return List.of();
-        }
-
-        return redisCart.getItems();
     }
 }

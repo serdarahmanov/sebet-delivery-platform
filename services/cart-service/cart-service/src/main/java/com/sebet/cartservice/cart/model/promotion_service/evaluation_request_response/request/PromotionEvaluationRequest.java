@@ -10,6 +10,15 @@ public record PromotionEvaluationRequest(
         Instant requestedAt,
         List<PromotionStoreBasketRequest> storeBaskets
 ) {
+    public static PromotionEvaluationRequest empty(String cartId, String userId) {
+        return new PromotionEvaluationRequest(
+                cartId,
+                userId,
+                "TMT",
+                Instant.now(),
+                List.of()
+        );
+    }
 }
 
 

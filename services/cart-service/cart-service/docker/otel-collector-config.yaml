@@ -1,0 +1,53 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+connectors:
+  # Reads client+server span pairs flowing through the traces pipeline and emits
+  # directed-edge metrics used by Grafana's Tempo "Service Graph" panel.
+  # The connector appears as an exporter in the traces pipeline and as a receiver
+  # in the metrics/servicegraph pipeline — this is the standard OTel connector pattern.
+  servicegraph:
+    latency_histogram_buckets: [100ms, 250ms, 500ms, 1000ms, 2000ms]
+    dimensions: []          # no extra label dimensions — keeps cardinality low
+    store:
+      ttl: 2s               # how long to hold an unmatched span half before discarding
+      max_items: 1000       # memory cap on in-flight edge tracking
+    metrics_flush_interval: 60s
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # Serves the service-graph metrics on :8889 so Prometheus can scrape them.
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    resource_to_telemetry_conversion:
+      enabled: true   # promotes resource attributes (e.g. service.name) to metric labels
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo, servicegraph]   # fan-out: Tempo gets all spans unchanged;
+                                               # servicegraph connector gets the same spans
+
+    metrics/servicegraph:
+      receivers: [servicegraph]   # fed by the connector above
+      exporters: [prometheus]     # served on :8889

@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -33,8 +34,11 @@ public class StoreEventListener {
             );
             handler.handle(event);
 
+        } catch (JacksonException ex) {
+            log.error("Unparseable store event, routing to DLT. message={}", message, ex);
+            throw ex;
         } catch (Exception ex) {
-            log.error("Failed to process store event message={}", message, ex);
+            log.error("Failed to process store event, will retry. message={}", message, ex);
             throw new RuntimeException("Failed to process store event", ex);
         }
 

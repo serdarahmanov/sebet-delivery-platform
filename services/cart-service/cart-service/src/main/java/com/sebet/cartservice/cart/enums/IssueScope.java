@@ -5,5 +5,7 @@ public enum IssueScope {
     ITEM,
     CART,
     BASKET,
-    DELIVERY
+    DELIVERY,
+    DELIVERY_ADDRESS,
+    INVENTORY
 }

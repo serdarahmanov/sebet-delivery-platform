@@ -49,7 +49,7 @@ public class StoreProjection {
     @Column(name = "estimated_preparation_minutes")
     private Integer estimatedPreparationMinutes;
 
-    @Column(name = "store_version", nullable = false)
+    @Column(name = "store_version")
     private Long storeVersion;
 
     @Column(name = "store_updated_at", nullable = false)

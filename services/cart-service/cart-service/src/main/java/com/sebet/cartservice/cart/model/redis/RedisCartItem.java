@@ -26,18 +26,18 @@ public class RedisCartItem {
 
     private Instant addedAt;
 
-    private BigDecimal unitPriceSnapshot;
+
 
     private Instant updatedAt;
 
-    public RedisCartItem(String productId, String storeId, BigDecimal quantity,BigDecimal unitPriceSnapshot) {
+    public RedisCartItem(String productId, String storeId, BigDecimal quantity) {
         this.cartItemId = UUID.randomUUID().toString();
         this.productId = productId;
         this.storeId = storeId;
         this.quantity = quantity;
         this.addedAt = Instant.now();
         this.updatedAt= Instant.now();
-        this.unitPriceSnapshot = unitPriceSnapshot;
+
     }
 
     public void touch() {

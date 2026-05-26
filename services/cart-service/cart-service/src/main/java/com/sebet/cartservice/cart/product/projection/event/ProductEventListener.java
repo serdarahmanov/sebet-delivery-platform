@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 
@@ -34,8 +35,11 @@ public class ProductEventListener {
 
             eventHandler.handle(event);
 
+        } catch (JacksonException ex) {
+            log.error("Unparseable product event, routing to DLT. message={}", message, ex);
+            throw ex;
         } catch (Exception ex) {
-            log.error("Failed to process product event message={}", message, ex);
+            log.error("Failed to process product event, will retry. message={}", message, ex);
             throw new RuntimeException("Failed to process product event", ex);
         }
 

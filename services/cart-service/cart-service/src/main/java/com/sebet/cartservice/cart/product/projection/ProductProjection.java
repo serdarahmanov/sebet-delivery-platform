@@ -69,7 +69,7 @@ public class ProductProjection {
     @Column(name = "quantity_step", nullable = false, precision = 19, scale = 3)
     private BigDecimal quantityStep;
 
-    @Column(name = "unit_price", nullable = false, precision = 19, scale = 2)
+    @Column(name = "unit_price", precision = 19, scale = 2)
     private BigDecimal unitPrice;
 
     @Column(name = "original_unit_price", precision = 19, scale = 2)

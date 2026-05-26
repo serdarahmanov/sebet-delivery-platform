@@ -1,6 +1,8 @@
 package com.sebet.cartservice.cart.product.projection;
 
+import jakarta.persistence.QueryHint;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -16,6 +18,8 @@ public interface ProductProjectionRepository extends JpaRepository<ProductProjec
 
     List<ProductProjection> findByStoreId(String storeId);
 
+    // Cart validation bulk lookup — two IN clauses, largest potential result set → 2 s cap.
+    @QueryHints(@QueryHint(name = "jakarta.persistence.query.timeout", value = "2000"))
     List<ProductProjection> findByProductIdInAndStoreIdIn(
             Collection<String> productIds,
             Collection<String> storeIds

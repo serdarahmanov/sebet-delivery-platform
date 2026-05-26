@@ -1,8 +1,9 @@
 package com.sebet.cartservice.cart.service;
 
+import com.sebet.cartservice.cart.config.CartFeeProperties;
+import com.sebet.cartservice.cart.enums.FreeDeliveryReason;
 import com.sebet.cartservice.cart.enums.ProductUnavailableReason;
 import com.sebet.cartservice.cart.model.cart_calculation.CartCalculationResult;
-import com.sebet.cartservice.cart.model.cart_calculation.CartTotalCalculation;
 import com.sebet.cartservice.cart.model.cart_calculation.ItemCalculation;
 import com.sebet.cartservice.cart.model.cart_calculation.StoreBasketCalculation;
 import com.sebet.cartservice.cart.model.cart_validation.CartValidationResult;
@@ -11,6 +12,7 @@ import com.sebet.cartservice.cart.model.cart_validation.PromoCodeValidationResul
 import com.sebet.cartservice.cart.model.cart_validation.StoreSnapshot;
 import com.sebet.cartservice.cart.model.redis.RedisCart;
 import com.sebet.cartservice.cart.model.redis.RedisCartItem;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -18,17 +20,34 @@ import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class CartCalculationService {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
+
+    private final CartFeeProperties feeProperties;
 
     public CartCalculationResult calculate(
             RedisCart redisCart,
             CartValidationResult validationResult
     ) {
+        return calculate(redisCart, validationResult, null);
+    }
+
+    public CartCalculationResult calculate(
+            RedisCart redisCart,
+            CartValidationResult validationResult,
+            Set<String> affectedStoreIds
+    ) {
         List<RedisCartItem> items = getCartItemsOrEmpty(redisCart);
+        if (affectedStoreIds != null && !affectedStoreIds.isEmpty()) {
+            items = items.stream()
+                    .filter(item -> item != null && affectedStoreIds.contains(item.getStoreId()))
+                    .toList();
+        }
 
         Map<String, ItemCalculation> itemCalculationsByCartItemId =
                 calculateItems(items, validationResult);
@@ -36,13 +55,9 @@ public class CartCalculationService {
         Map<String, StoreBasketCalculation> storeBasketCalculationsByStoreId =
                 calculateStoreBaskets(items, validationResult, itemCalculationsByCartItemId);
 
-        CartTotalCalculation cartTotal =
-                calculateCartTotal(storeBasketCalculationsByStoreId);
-
         return new CartCalculationResult(
                 itemCalculationsByCartItemId,
-                storeBasketCalculationsByStoreId,
-                cartTotal
+                storeBasketCalculationsByStoreId
         );
     }
 
@@ -84,16 +99,21 @@ public class CartCalculationService {
             RedisCartItem item,
             CartValidationResult validationResult
     ) {
-        ProductSnapshot product = validationResult.productsByProductId()
-                .get(item.getProductId());
+        ProductSnapshot product = validationResult.productsByProductStore()
+                .get(new CartValidationResult.ProductStoreKey(item.getProductId(), item.getStoreId()));
 
         BigDecimal unitPrice = resolveUnitPrice(item, product);
         BigDecimal quantity = safe(item.getQuantity());
 
         BigDecimal subtotal = unitPrice.multiply(quantity);
 
-        BigDecimal itemDiscountTotal = ZERO;
-
+        BigDecimal itemDiscountTotal = validationResult.getItemDiscounts(item.getCartItemId())
+                .stream()
+                .filter(r -> r.discounts() != null)
+                .flatMap(r -> r.discounts().stream())
+                .map(d -> safe(d.discountAmount()))
+                .reduce(ZERO, BigDecimal::add)
+                .min(subtotal);
 
         BigDecimal finalTotal = subtotal.subtract(itemDiscountTotal);
 
@@ -119,10 +139,6 @@ public class CartCalculationService {
     ) {
         if (product != null && product.currentPrice() != null) {
             return product.currentPrice();
-        }
-
-        if (item.getUnitPriceSnapshot() != null) {
-            return item.getUnitPriceSnapshot();
         }
 
         return ZERO;
@@ -164,49 +180,52 @@ public class CartCalculationService {
     ) {
         StoreSnapshot store = validationResult.storesByStoreId().get(storeId);
 
-        BigDecimal itemsSubtotal = storeItems.stream()
-                .map(item -> itemCalculationsByCartItemId.get(item.getCartItemId()))
-                .map(ItemCalculation::subtotal)
-                .reduce(ZERO, BigDecimal::add);
+        BigDecimal itemsSubtotal = ZERO;
+        BigDecimal itemsCount = ZERO;
+        BigDecimal itemDiscountTotal = ZERO;
+        int uniqueItemsCount = 0;
 
-        BigDecimal itemsCount = storeItems.stream()
-                .map(RedisCartItem::getQuantity)
-                .map(this::safe)
-                .reduce(ZERO, BigDecimal::add);
+        for (RedisCartItem storeItem : storeItems) {
+            if (storeItem == null) {
+                continue;
+            }
+            uniqueItemsCount++;
+            itemsCount = itemsCount.add(safe(storeItem.getQuantity()));
 
-        BigDecimal uniqueItemsCount = BigDecimal.valueOf(storeItems.size());
-        BigDecimal itemDiscountTotal = storeItems.stream()
-                .map(item -> itemCalculationsByCartItemId.get(item.getCartItemId()))
-                .map(ItemCalculation::itemDiscountTotal)
-                .reduce(ZERO, BigDecimal::add);
+            ItemCalculation itemCalculation = itemCalculationsByCartItemId.get(storeItem.getCartItemId());
+            if (itemCalculation == null) {
+                continue;
+            }
+            itemsSubtotal = itemsSubtotal.add(safe(itemCalculation.subtotal()));
+            itemDiscountTotal = itemDiscountTotal.add(safe(itemCalculation.itemDiscountTotal()));
+        }
 
         BigDecimal promoDiscountTotal =
                 calculatePromoDiscount(storeId, itemsSubtotal, validationResult);
 
         BigDecimal deliveryFee =
-                resolveDeliveryFee(store);
+                resolveDeliveryFee(storeId, validationResult);
 
-        BigDecimal freeDeliveryDiscount =
-                calculateFreeDeliveryDiscount(
-                        storeId,
-                        itemsSubtotal,
-                        deliveryFee,
-                        store,
-                        validationResult
-                );
+        BigDecimal freeDeliveryDiscount = deliveryFee != null
+                ? calculateFreeDeliveryDiscount(storeId, itemsSubtotal, deliveryFee, store, validationResult)
+                : ZERO;
 
-        BigDecimal serviceFee = ZERO;
-        BigDecimal smallOrderFee = ZERO;
+        FreeDeliveryReason freeDeliveryReason = deliveryFee != null
+                ? resolveFreeDeliveryReason(storeId, freeDeliveryDiscount, validationResult)
+                : null;
+
+        BigDecimal serviceFee = safe(feeProperties.getServiceFee());
 
         BigDecimal totalDiscount = itemDiscountTotal.add(promoDiscountTotal);
 
-        BigDecimal basketTotal = itemsSubtotal
-                .subtract(itemDiscountTotal)
-                .subtract(promoDiscountTotal)
-                .add(deliveryFee)
-                .subtract(freeDeliveryDiscount)
-                .add(serviceFee)
-                .add(smallOrderFee);
+        BigDecimal basketTotal = deliveryFee != null
+                ? itemsSubtotal
+                        .subtract(itemDiscountTotal)
+                        .subtract(promoDiscountTotal)
+                        .add(deliveryFee)
+                        .subtract(freeDeliveryDiscount)
+                        .add(serviceFee)
+                : null;
 
         BigDecimal amountToFreeDelivery =
                 calculateAmountToFreeDelivery(
@@ -225,9 +244,9 @@ public class CartCalculationService {
                 totalDiscount,
                 deliveryFee,
                 freeDeliveryDiscount,
+                freeDeliveryReason,
                 basketTotal,
                 serviceFee,
-                smallOrderFee,
                 amountToFreeDelivery
         );
     }
@@ -237,34 +256,34 @@ public class CartCalculationService {
             BigDecimal itemsSubtotal,
             CartValidationResult validationResult
     ) {
-        PromoCodeValidationResult promoResult =
-                validationResult.promoResultsByStoreId().get(storeId);
+        List<PromoCodeValidationResult> promoResults =
+                validationResult.promoResultsByStoreId().getOrDefault(storeId, List.of());
 
-        if (promoResult == null) {
+        if (promoResults.isEmpty()) {
             return ZERO;
         }
 
-        if (!promoResult.exists() || !promoResult.valid() || !promoResult.applied()) {
-            return ZERO;
+        BigDecimal total = ZERO;
+        for (PromoCodeValidationResult promoResult : promoResults) {
+            if (promoResult == null || !promoResult.applied()) {
+                continue;
+            }
+            if (promoResult.type() == null || promoResult.discountValue() == null) {
+                continue;
+            }
+
+            BigDecimal discount = switch (promoResult.type()) {
+                case PERCENTAGE -> calculatePercentageDiscount(
+                        itemsSubtotal,
+                        promoResult.discountValue()
+                );
+                case FIXED_AMOUNT -> promoResult.discountValue().min(itemsSubtotal);
+                case FREE_DELIVERY -> ZERO;
+                case BUY_X_PAY_Y -> ZERO;
+            };
+            total = total.add(safe(discount));
         }
-
-        if (promoResult.type() == null || promoResult.discountValue() == null) {
-            return ZERO;
-        }
-
-
-        return switch (promoResult.type()) {
-            case PERCENTAGE -> calculatePercentageDiscount(
-                    itemsSubtotal,
-                    promoResult.discountValue()
-            );
-
-            case FIXED_AMOUNT -> promoResult.discountValue().min(itemsSubtotal);
-
-            case FREE_DELIVERY -> ZERO;
-
-            case BUY_X_PAY_Y -> ZERO;
-        };
+        return total.min(itemsSubtotal).max(ZERO);
     }
 
 
@@ -281,12 +300,26 @@ public class CartCalculationService {
                 .divide(BigDecimal.valueOf(100),2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal resolveDeliveryFee(StoreSnapshot store) {
-        if (store == null || store.deliveryFee() == null) {
-            return ZERO;
+    private FreeDeliveryReason resolveFreeDeliveryReason(
+            String storeId,
+            BigDecimal freeDeliveryDiscount,
+            CartValidationResult validationResult
+    ) {
+        if (freeDeliveryDiscount.compareTo(ZERO) <= 0) {
+            return FreeDeliveryReason.THRESHOLD_NOT_REACHED;
         }
+        boolean promoGranted = validationResult.promoResultsByStoreId()
+                .getOrDefault(storeId, List.of()).stream()
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(p -> p.applied()
+                        && p.type() == ProductUnavailableReason.PromoCodeType.FREE_DELIVERY);
+        return promoGranted
+                ? FreeDeliveryReason.PROMO_CODE_FREE_DELIVERY
+                : FreeDeliveryReason.THRESHOLD_REACHED;
+    }
 
-        return store.deliveryFee();
+    private BigDecimal resolveDeliveryFee(String storeId, CartValidationResult validationResult) {
+        return validationResult.getQuotedDeliveryFee(storeId).orElse(null);
     }
 
     private BigDecimal calculateFreeDeliveryDiscount(
@@ -296,15 +329,15 @@ public class CartCalculationService {
             StoreSnapshot store,
             CartValidationResult validationResult
     ) {
-        PromoCodeValidationResult promoResult =
-                validationResult.promoResultsByStoreId().get(storeId);
+        List<PromoCodeValidationResult> promoResults =
+                validationResult.promoResultsByStoreId().getOrDefault(storeId, List.of());
 
-        if (promoResult != null
-                && promoResult.exists()
-                && promoResult.valid()
-                && promoResult.applied()
-                && promoResult.type() == ProductUnavailableReason.PromoCodeType.FREE_DELIVERY) {
-            return deliveryFee;
+        boolean freeDeliveryApplied = promoResults.stream()
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(promoResult -> promoResult.applied()
+                        && promoResult.type() == ProductUnavailableReason.PromoCodeType.FREE_DELIVERY);
+        if (freeDeliveryApplied) {
+            return safe(deliveryFee);
         }
 
         if (store == null || store.freeDeliveryThreshold() == null) {
@@ -338,58 +371,6 @@ public class CartCalculationService {
         }
 
         return remaining;
-    }
-
-    private CartTotalCalculation calculateCartTotal(
-            Map<String, StoreBasketCalculation> basketCalculationsByStoreId
-    ) {
-        BigDecimal itemsSubtotal = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::itemsSubtotal)
-                .reduce(ZERO, BigDecimal::add);
-
-        BigDecimal itemDiscountTotal = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::itemDiscountTotal)
-                .reduce(ZERO, BigDecimal::add);
-
-        BigDecimal promoDiscountTotal = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::promoDiscountTotal)
-                .reduce(ZERO, BigDecimal::add);
-
-        BigDecimal totalDiscount = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::totalDiscount)
-                .reduce(ZERO, BigDecimal::add);
-
-        BigDecimal deliveryFeeTotal = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::deliveryFee)
-                .reduce(ZERO, BigDecimal::add);
-
-        BigDecimal freeDeliveryDiscountTotal = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::freeDeliveryDiscount)
-                .reduce(ZERO, BigDecimal::add);
-
-        BigDecimal serviceFeeTotal = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::serviceFee)
-                .reduce(ZERO, BigDecimal::add);
-
-        BigDecimal smallOrderFeeTotal = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::smallOrderFee)
-                .reduce(ZERO, BigDecimal::add);
-
-        BigDecimal grandTotal = basketCalculationsByStoreId.values().stream()
-                .map(StoreBasketCalculation::basketTotal)
-                .reduce(ZERO, BigDecimal::add);
-
-        return new CartTotalCalculation(
-                itemsSubtotal,
-                itemDiscountTotal,
-                promoDiscountTotal,
-                totalDiscount,
-                deliveryFeeTotal,
-                freeDeliveryDiscountTotal,
-                serviceFeeTotal,
-                smallOrderFeeTotal,
-                grandTotal
-        );
     }
 
     private BigDecimal safe(BigDecimal value) {

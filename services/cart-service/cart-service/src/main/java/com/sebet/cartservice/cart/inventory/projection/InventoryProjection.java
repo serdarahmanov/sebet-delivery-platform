@@ -45,7 +45,7 @@ public class InventoryProjection {
     private BigDecimal availableQuantity;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "stock_status", nullable = false, length = 50)
+    @Column(name = "stock_status", length = 50)
     private StockStatus stockStatus;
 
     @Column(name = "available", nullable = false)

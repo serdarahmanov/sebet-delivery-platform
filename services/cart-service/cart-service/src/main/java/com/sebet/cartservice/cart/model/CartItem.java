@@ -2,6 +2,7 @@ package com.sebet.cartservice.cart.model;
 
 import com.sebet.cartservice.cart.enums.ProductUnit;
 import com.sebet.cartservice.cart.enums.StockStatus;
+import com.sebet.cartservice.cart.model.item.ItemIssue;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -40,7 +41,7 @@ public record CartItem(
         StockStatus stockStatus,
 
         Boolean isValid,
-        List<CartItemIssues> issues,
+        List<ItemIssue> issues,
 
         Instant addedAt,
         Instant updatedAt

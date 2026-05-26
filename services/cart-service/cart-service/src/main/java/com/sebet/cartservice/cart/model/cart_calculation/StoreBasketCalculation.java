@@ -1,13 +1,14 @@
 package com.sebet.cartservice.cart.model.cart_calculation;
 
+import com.sebet.cartservice.cart.enums.FreeDeliveryReason;
+
 import java.math.BigDecimal;
 
 public record StoreBasketCalculation(
         String storeId,
 
         BigDecimal itemsCount,
-        BigDecimal uniqueItemsCount,
-
+        int uniqueItemsCount,
 
         BigDecimal itemsSubtotal,
 
@@ -17,9 +18,9 @@ public record StoreBasketCalculation(
 
         BigDecimal deliveryFee,
         BigDecimal freeDeliveryDiscount,
+        FreeDeliveryReason freeDeliveryReason,
         BigDecimal basketTotal,
         BigDecimal serviceFee,
-        BigDecimal smallOrderFee,
         BigDecimal amountToFreeDelivery
 ) {
 }

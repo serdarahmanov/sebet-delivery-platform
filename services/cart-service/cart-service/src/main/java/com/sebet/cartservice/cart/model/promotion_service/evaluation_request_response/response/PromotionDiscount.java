@@ -9,7 +9,7 @@ public record PromotionDiscount(
         String name,
 
         PromotionDiscountTarget target,
-        ProductUnavailableReason.PromoCodeType type,
+        PromoCodeType type,
 
         BigDecimal discountAmount
 ) {

@@ -6,8 +6,8 @@ public enum ProductUnavailableReason {
     TEMPORARY_UNAVAILABLE;
 
     public enum PromoCodeType {
-        FIXED_AMOUNT,
         PERCENTAGE,
+        FIXED_AMOUNT,
         FREE_DELIVERY,
         BUY_X_PAY_Y
     }
