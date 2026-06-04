@@ -1,6 +1,7 @@
 package com.sebet.order_service.customer.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.sebet.order_service.shared.enums.RefundStatus;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -56,25 +57,15 @@ public record OrderHistoryItemResponse(
 
 ) {
 
-    /**
-     * Routing discriminator — one value per card type in the history feed.
-     * The frontend maps each value to a detail endpoint and a card layout.
-     * Active orders are never present in this feed.
-     */
     public enum OrderDetailRoute {
-        /** Order is awaiting its scheduled delivery window. */
         SCHEDULED,
-        /** Order was successfully delivered. */
         DELIVERED,
-        /** Order was cancelled. Refund info is present. */
         CANCELLED
     }
 
-    /** Refund badge data — only present on CANCELLED cards. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RefundInfo(
-            /** {@code "REFUND_PENDING"} or {@code "REFUNDED"}. */
-            String status,
+            RefundStatus status,
             /** ISO-8601 timestamp of refund completion; null while still pending. */
             String refundedAt
     ) {}

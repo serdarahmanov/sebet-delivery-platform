@@ -10,17 +10,30 @@ public final class RedisKeys {
     private RedisKeys() {}
 
     // ── raw prefixes ────────────────────────────────────────────────────────
-    private static final String ACTIVE_ORDERS_PREFIX = "user:active_orders:";
-    private static final String ORDER_PREFIX         = "order:";
-    private static final String TRACKING_PREFIX      = "order:tracking:";
-    private static final String STATUS_PREFIX        = "order:status:";
-    private static final String LOCK_PREFIX          = "order:lock:";
-    private static final String TIMELINE_PREFIX      = "order:timeline:";
-    private static final String VERIFICATION_PREFIX  = "order:verification:";
+    private static final String ACTIVE_ORDERS_PREFIX            = "user:active_orders:";
+    private static final String STORE_ACTIVE_ORDERS_PREFIX      = "store:active_orders:";
+    private static final String STORE_SCHEDULED_ORDERS_PREFIX   = "store:scheduled_orders:";
+    private static final String ORDER_PREFIX               = "order:";
+    private static final String TRACKING_PREFIX            = "order:tracking:";
+    private static final String STATUS_PREFIX              = "order:status:";
+    private static final String LOCK_PREFIX                = "order:lock:";
+    private static final String TIMELINE_PREFIX            = "order:timeline:";
+    private static final String VERIFICATION_PREFIX        = "order:verification:";
+    private static final String PROPOSALS_PREFIX           = "order:proposals:";
 
     // ── Cache 1: user:active_orders:{userId}  (Redis SET) ───────────────────
     public static String activeOrders(String userId) {
         return ACTIVE_ORDERS_PREFIX + userId;
+    }
+
+    // ── Cache 1b: store:active_orders:{storeId}  (Redis SET) ────────────────
+    public static String storeActiveOrders(String storeId) {
+        return STORE_ACTIVE_ORDERS_PREFIX + storeId;
+    }
+
+    // ── Cache 1c: store:scheduled_orders:{storeId}  (Redis ZSET, score = scheduledFor epoch) ──
+    public static String storeScheduledOrders(String storeId) {
+        return STORE_SCHEDULED_ORDERS_PREFIX + storeId;
     }
 
     // ── Cache 2: order:{orderId}  (STRING / JSON) ────────────────────────────
@@ -51,5 +64,10 @@ public final class RedisKeys {
     // ── Cache 7: order:verification:{orderId}  (STRING / JSON) ──────────────
     public static String orderVerification(String orderId) {
         return VERIFICATION_PREFIX + orderId;
+    }
+
+    // ── Cache 8: order:proposals:{orderId}  (STRING / JSON) ──────────────────
+    public static String orderProposals(String orderId) {
+        return PROPOSALS_PREFIX + orderId;
     }
 }

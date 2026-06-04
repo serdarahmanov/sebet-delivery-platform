@@ -1,7 +1,9 @@
 package com.sebet.order_service.customer.controller;
 
+import com.sebet.order_service.customer.dto.request.RespondToOrderChangesRequest;
 import com.sebet.order_service.customer.dto.request.UpdateScheduledOrderRequest;
 import com.sebet.order_service.customer.dto.response.*;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,6 +35,8 @@ import java.util.List;
  *   GET  /api/v1/orders/{orderId}/status              → lightweight status     (C4)
  *   GET  /api/v1/orders/{orderId}/tracking            → live GPS + ETA poll    (C3 + C4)
  *   GET  /api/v1/orders/{orderId}/verification-code   → delivery code fallback (C7)
+ *   GET  /api/v1/orders/{orderId}/proposed-changes    → fetch active store proposal (C8)
+ *   POST /api/v1/orders/{orderId}/respond-to-changes  → respond to store proposal
  *   POST /api/v1/orders/{orderId}/cancel              → cancel order
  *
  * ── Pending (not yet implemented) ───────────────────────────────────────────
@@ -199,6 +203,47 @@ public class CustomerOrderController {
     public ResponseEntity<VerificationCodeResponse> getVerificationCode(
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
+    ) {
+        throw new UnsupportedOperationException("Not implemented yet");
+    }
+
+    // ── Proposed changes ─────────────────────────────────────────────────────
+
+    /**
+     * Returns the active change proposal submitted by the store.
+     *
+     * Used when the customer's app was offline during the push notification and
+     * needs to load the proposal on re-launch.
+     *
+     * Source  : Cache 8 (order:proposals:{orderId})
+     * Returns : 200 + OrderProposedChangesResponse  when a proposal is active
+     *           404                                 when no proposal exists or has expired
+     */
+    @GetMapping("/{orderId}/proposed-changes")
+    public ResponseEntity<OrderProposedChangesResponse> getProposedChanges(
+            @RequestHeader("X-User-Id") String userId,
+            @PathVariable String orderId
+    ) {
+        throw new UnsupportedOperationException("Not implemented yet");
+    }
+
+    /**
+     * Submits the customer's response to the store's change proposal.
+     *
+     * Possible outcomes:
+     *   CONFIRMED  — customer accepted all or some items; order resumes preparation.
+     *   CANCELLED  — customer cancelled, or all items were removed.
+     *
+     * Clears Cache 8 (proposals) on completion regardless of outcome.
+     *
+     * Returns 404 when no active proposal exists.
+     * Returns 409 when the order is not in AWAITING_CUSTOMER_RESPONSE status.
+     */
+    @PostMapping("/{orderId}/respond-to-changes")
+    public ResponseEntity<RespondToOrderChangesResponse> respondToOrderChanges(
+            @RequestHeader("X-User-Id") String userId,
+            @PathVariable String orderId,
+            @RequestBody @Valid RespondToOrderChangesRequest request
     ) {
         throw new UnsupportedOperationException("Not implemented yet");
     }

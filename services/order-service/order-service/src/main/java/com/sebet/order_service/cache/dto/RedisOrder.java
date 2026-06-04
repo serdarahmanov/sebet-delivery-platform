@@ -31,6 +31,8 @@ public class RedisOrder {
 
     private String orderId;
     private String userId;
+    private String storeId;
+    private String storeName;
     private String cartId;
     private BigDecimal totalAmount;
     private DeliveryAddress deliveryAddress;

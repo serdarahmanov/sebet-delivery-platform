@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.sebet.order_service.customer.dto.response.shared.DeliveryAddressDto;
 import com.sebet.order_service.customer.dto.response.shared.OrderItemDto;
 import com.sebet.order_service.customer.dto.response.shared.PricingDto;
+import com.sebet.order_service.shared.enums.OrderCancelledBy;
+import com.sebet.order_service.shared.enums.OrderCancellationReason;
+import com.sebet.order_service.shared.enums.RefundStatus;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,10 +38,8 @@ public record CancelledOrderDetailResponse(
         /** ISO-8601 cancellation timestamp. */
         String cancelledAt,
 
-        /** Who initiated the cancellation. */
-        CancelledBy cancelledBy,
-        /** Machine-readable reason code for the cancellation. */
-        CancellationReason cancellationReason,
+        OrderCancelledBy cancelledBy,
+        OrderCancellationReason cancellationReason,
 
         /** Refund state — always present for cancelled orders. */
         RefundInfo refund,
@@ -48,26 +49,10 @@ public record CancelledOrderDetailResponse(
 
 ) {
 
-    public enum CancelledBy {
-        USER,
-        STORE,
-        SYSTEM
-    }
-
-    public enum CancellationReason {
-        USER_REQUESTED,
-        STORE_REJECTED,
-        PAYMENT_FAILED,
-        OUT_OF_STOCK,
-        TIMEOUT,
-        SYSTEM_ERROR
-    }
-
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RefundInfo(
-            /** {@code "REFUND_PENDING"} or {@code "REFUNDED"}. */
-            String status,
-            /** Exact refund amount issued (may differ from grandTotal due to partial refunds). */
+            RefundStatus status,
+            /** Exact refund amount issued; may differ from grandTotal for partial refunds. */
             BigDecimal amount,
             /** ISO-8601 timestamp of refund completion; null while still pending. */
             String refundedAt

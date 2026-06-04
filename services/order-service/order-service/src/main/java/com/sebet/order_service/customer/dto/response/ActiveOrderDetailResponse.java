@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.sebet.order_service.customer.dto.response.shared.DeliveryAddressDto;
 import com.sebet.order_service.customer.dto.response.shared.OrderItemDto;
 import com.sebet.order_service.customer.dto.response.shared.StoreLocationDto;
+import com.sebet.order_service.shared.enums.OrderStatus;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -34,10 +35,9 @@ public record ActiveOrderDetailResponse(
 
         /**
          * Initial status from Cache 4 — for the progress stepper first render.
-         * e.g. {@code "CONFIRMED"}, {@code "OUT_FOR_DELIVERY"}.
          * WebSocket takes over live updates after mount.
          */
-        String status,
+        OrderStatus status,
 
         String storeName,
         String storeId,
