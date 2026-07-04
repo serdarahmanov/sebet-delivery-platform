@@ -4,7 +4,7 @@ Spring Boot order lifecycle microservice for the Sebet delivery platform.
 
 The service is designed to receive checkout confirmations from cart-service, create orders, expose customer and store order APIs, maintain Redis-backed hot order views, and support live tracking through WebSocket/STOMP.
 
-The current codebase contains the API/DTO/cache skeleton, durable order persistence, Flyway schema migration, repository tests, an internal order creation service, and checkout-event-to-command mapping. Kafka consumers, Redis hot-view writes during order creation, WebSocket broker, REST service implementations, and global error handling are still pending.
+The current codebase contains the API/DTO/cache skeleton, durable order persistence, Flyway schema migration, repository tests, an internal order creation service, checkout-event-to-command mapping, and a Kafka checkout-event consumer. Redis hot-view writes during order creation, WebSocket broker, REST service implementations, Kafka retry/DLT handling, and global error handling are still pending.
 
 ## Tech Stack
 
@@ -71,11 +71,12 @@ be running before executing the test command.
 
 Use [.env.example](.env.example) as the starting point for expected runtime settings.
 
-The current `application.yml` sets the service name and disables JPA Open
-Session in View. Production environment-backed settings live in
-`application-prod.yml`. Redis, PostgreSQL, Kafka, and downstream/event settings
-still need full runtime configuration before this service can run as a complete
-order processor.
+The current `application.yml` sets the service name, disables JPA Open Session
+in View, and keeps the checkout Kafka listener disabled by default for local
+runs. Production environment-backed settings live in `application-prod.yml`,
+where the checkout listener is enabled by default. Redis, PostgreSQL, Kafka, and
+downstream/event settings still need full runtime configuration before this
+service can run as a complete order processor.
 
 ## Documentation
 

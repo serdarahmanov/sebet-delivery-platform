@@ -4,7 +4,7 @@
 
 Order-service is designed as an event-entry microservice.
 
-Orders are not created directly by REST. The planned entry point is a Kafka `CheckoutConfirmedEvent` from cart-service. After creation, customer and store clients interact with the order through REST APIs and, later, WebSocket/STOMP live updates.
+Orders are not created directly by REST. The implemented entry point is a Kafka `CheckoutConfirmedEvent` from cart-service. After creation, customer and store clients interact with the order through REST APIs and, later, WebSocket/STOMP live updates.
 
 ```text
 Kafka checkout event
@@ -33,6 +33,7 @@ com.sebet.order_service
     repository/
   integration/
     checkout/
+      consumer/
       event/
       mapper/
   order/
@@ -55,8 +56,9 @@ com.sebet.order_service
 
 - Controllers define endpoint contracts but currently throw `UnsupportedOperationException`.
 - `OrderCreationService` creates durable orders, order items, and initial status history from an internal command.
-- Checkout integration DTOs model the planned cart-service checkout event.
+- Checkout integration DTOs model the cart-service checkout event.
 - `CheckoutConfirmedEventMapper` translates checkout events into order creation commands.
+- `CheckoutConfirmedEventConsumer` listens for checkout events and invokes order creation.
 - JPA entities and repositories own durable order persistence.
 - Flyway owns the current PostgreSQL schema.
 - Redis repositories own cache key usage and low-level Redis operations.
@@ -67,7 +69,7 @@ com.sebet.order_service
 ## Planned Boundaries
 
 - Customer/store services should own REST-facing workflows and business state transitions.
-- Kafka consumers should deserialize external events, call mappers, and invoke services.
+- Kafka consumers should deserialize external events, call mappers, and invoke services. Consumer startup should stay configuration-driven.
 - Redis repositories should remain cache-specific and not contain lifecycle policy.
 - WebSocket publisher components should emit live status/tracking updates after state changes.
 

@@ -24,9 +24,16 @@ Before complete deployment, the service will need:
 - PostgreSQL
 - Redis
 - Kafka
-- topic configuration
+- Kafka topic configuration
 - production profile activation
 - health/metrics exposure settings
+
+Kafka checkout topic requirements:
+
+- `ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_TOPIC` must exist.
+- `ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_DLT_TOPIC` must exist.
+- The DLT topic must have at least as many partitions as the source checkout topic.
+- Production enables `ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_VALIDATE_TOPICS=true` by default, so the app fails startup when these requirements are not met.
 
 ## Expected Environment Variables
 
@@ -39,6 +46,7 @@ Expected categories:
 - Kafka bootstrap servers
 - consumed topic names
 - produced topic names
+- checkout retry and DLT settings
 
 ## Deployment Work Remaining
 
@@ -51,3 +59,6 @@ Expected categories:
 ## Operational Rule
 
 Do not deploy as a production order processor until service layer, persistence, event consumers, idempotency, and error handling are implemented and tested.
+
+For checkout event consumption, do not disable DLT topic validation in production
+unless topic readiness is enforced by another deployment gate.

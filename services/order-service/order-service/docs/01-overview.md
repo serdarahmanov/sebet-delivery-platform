@@ -23,12 +23,15 @@ Implemented:
 - internal order creation service
 - checkout confirmed event DTOs
 - checkout event to order creation command mapper
-- repository and order creation integration tests
+- checkout event Kafka consumer
+- repository, order creation, and Kafka listener integration tests
 
 Pending:
 
 - REST-facing customer and store service methods
-- Kafka consumers and producers
+- order event producers
+- delivery-arrival Kafka consumer
+- Kafka retry and dead-letter handling
 - Redis hot-view writes during order creation
 - WebSocket/STOMP broker configuration
 - background jobs

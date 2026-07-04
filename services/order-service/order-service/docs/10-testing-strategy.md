@@ -10,6 +10,7 @@ The project currently has:
 - JPA repository tests against PostgreSQL Testcontainers.
 - Order creation service integration tests.
 - Checkout event mapper unit tests.
+- Checkout Kafka listener integration test against a real broker.
 
 The Spring context test uses Testcontainers to start PostgreSQL, Redis, and
 Kafka, then boots the application with the `test` Spring profile.
@@ -47,6 +48,8 @@ Implemented baseline tests:
 - required `X-User-Id`
 - required `X-Store-Id`
 - checkout event mapping
+- checkout event consumer delegation
+- checkout Kafka listener integration
 - durable order repository behavior
 - order creation behavior
 
@@ -78,11 +81,12 @@ Implemented integration coverage:
 - item line-number ordering
 - initial order creation for immediate and scheduled orders
 - duplicate cart id handling in order creation
+- checkout event consumer mapping and duplicate-path delegation
+- Kafka listener integration against a real broker
 
 Add integration tests when implemented:
 
 - Redis repositories
-- Kafka consumer idempotency
 - Kafka retry/DLT behavior
 - WebSocket/STOMP subscriptions
 
