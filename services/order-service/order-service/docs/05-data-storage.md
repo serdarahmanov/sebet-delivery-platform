@@ -10,13 +10,17 @@ Implemented:
 - Redis DTOs.
 - Redis repository classes.
 - Redis Lua script beans for lock release and active-set cleanup.
+- JPA entities for orders, order items, and order status history.
+- Spring Data JPA repositories.
+- Flyway migration `V1__create_order_tables.sql`.
+- JSONB mapping for the delivery address snapshot and status metadata.
+- Unique `orders.cart_id` idempotency constraint.
+- Unique per-order `order_items.line_number` constraint.
 
 Pending:
 
-- JPA entities.
-- JPA repositories.
-- Flyway migrations.
-- durable order status history table.
+- Redis hot-view writes during order creation.
+- Durable proposal/refund/verification extensions if those states need long-term storage.
 
 ## Redis Key Registry
 
@@ -60,21 +64,24 @@ Key patterns:
 
 These scripts close common Redis race windows.
 
-## Planned PostgreSQL Schema
+## PostgreSQL Schema
 
-The durable schema should store:
+The current durable schema stores:
 
-- order header
-- order items
-- delivery address
-- pricing
-- cancellation fields
-- refund fields
-- verification fields
-- proposal timestamps
-- order status history
+- `orders`: durable order header, cart id, customer/store ids, status, schedule fields, totals, discounts, delivery address snapshot, coordinates, cancellation fields, and timestamps.
+- `order_items`: durable item snapshots with product, quantity, unit, pricing, discount, image URL, and line number.
+- `order_status_history`: append-style status transition records.
 
-No Flyway migration currently exists in this service.
+Important constraints and indexes:
+
+- `orders.id` primary key.
+- `orders.cart_id` unique index for checkout idempotency.
+- `order_items.order_id` foreign key to `orders.id` with cascade delete.
+- `order_items(order_id, line_number)` unique index.
+- `order_status_history.order_id` foreign key to `orders.id` with cascade delete.
+- customer/store history indexes on `(customer_id, created_at desc)` and `(store_id, created_at desc)`.
+
+Delivery address is stored as `jsonb` because it is a checkout-time snapshot owned by the order. Coordinates are stored as explicit numeric columns for easier querying and mapping.
 
 ## Data Rule
 

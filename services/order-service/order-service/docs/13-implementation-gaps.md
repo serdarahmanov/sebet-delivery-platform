@@ -10,18 +10,38 @@ All controller methods currently throw:
 UnsupportedOperationException("Not implemented yet")
 ```
 
-Service classes need to be added for customer, store, order lifecycle, proposals, tracking, and verification behavior.
+Implemented:
 
-## Database
+- `OrderCreationService` creates durable orders from internal checkout commands.
 
 Pending:
 
-- JPA entities
+- customer-facing service methods
+- store-facing service methods
+- order status transition service methods
+- proposals, tracking, verification, cancellation, and delivery completion behavior
+
+## Database
+
+Implemented:
+
+- JPA entities for `orders`, `order_items`, and `order_status_history`
 - JPA repositories
-- Flyway migrations
-- order status history table
+- Flyway migration `V1__create_order_tables.sql`
+- unique `cart_id` idempotency constraint
+- repository tests
+
+Pending:
+
+- durable proposal/refund/verification fields if required by later workflows
+- further indexes based on actual query patterns
 
 ## Kafka
+
+Implemented:
+
+- checkout confirmed event DTOs
+- checkout event to order creation command mapper
 
 Pending:
 
@@ -29,7 +49,7 @@ Pending:
 - delivery arrival consumer
 - order event publisher
 - retry and DLT configuration
-- idempotency checks for duplicate checkout events
+- Redis lock integration for checkout event handling
 
 ## Background Jobs
 

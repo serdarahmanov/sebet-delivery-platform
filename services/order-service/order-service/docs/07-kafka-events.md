@@ -4,7 +4,7 @@
 
 | Topic | Event | Purpose | Status |
 |---|---|---|---|
-| `checkout-events` | `CheckoutConfirmedEvent` | Create order from cart checkout | Pending |
+| `checkout-events` | `CheckoutConfirmedEvent` | Create order from cart checkout | DTO and mapper implemented; consumer pending |
 | `order.arrived` | `OrderArrivedEvent` | Generate delivery verification code and update tracking | Pending |
 
 ## Planned Produced Topics
@@ -21,15 +21,29 @@
 Planned flow:
 
 1. Consume `CheckoutConfirmedEvent`.
-2. Acquire `order:lock:{cartId}`.
-3. Persist order in PostgreSQL.
-4. Write Redis hot keys.
-5. Publish order-created/status event.
-6. Release lock.
+2. Map it to `CreateOrderCommand`.
+3. Acquire `order:lock:{cartId}`.
+4. Persist order in PostgreSQL.
+5. Write Redis hot keys.
+6. Publish order-created/status event.
+7. Release lock.
+
+Implemented pieces:
+
+- `CheckoutConfirmedEvent`
+- `CheckoutConfirmedItem`
+- `CheckoutDeliveryAddress`
+- `CheckoutStoreLocation`
+- `CheckoutConfirmedEventMapper`
+- `OrderCreationService`
+
+The mapper preserves item order, item-level discounts, order-level discounts, address snapshot, delivery coordinates, store coordinates, schedule type, and `cartId`.
 
 ## Current Implementation Status
 
 Spring Kafka dependencies are present. Kafka consumers, producers, topic config, retry policy, and DLT handling are not implemented yet.
+
+Duplicate checkout creation is protected at the database level by the unique `orders.cart_id` index. `OrderCreationService` also returns the existing order when the cart id has already been processed.
 
 ## Design Rule
 

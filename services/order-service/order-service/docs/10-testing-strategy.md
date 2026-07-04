@@ -2,14 +2,17 @@
 
 ## Current Tests
 
-The project currently has a Spring context test:
+The project currently has:
 
-```text
-OrderServiceApplicationTests
-```
+- Redis key generation tests.
+- MVC interceptor tests for `X-User-Id` and `X-Store-Id`.
+- Spring context test with PostgreSQL, Redis, and Kafka Testcontainers.
+- JPA repository tests against PostgreSQL Testcontainers.
+- Order creation service integration tests.
+- Checkout event mapper unit tests.
 
-This test uses Testcontainers to start PostgreSQL, Redis, and Kafka, then boots
-the application with the `test` Spring profile.
+The Spring context test uses Testcontainers to start PostgreSQL, Redis, and
+Kafka, then boots the application with the `test` Spring profile.
 
 ## Test Commands
 
@@ -38,11 +41,14 @@ Compile without running tests:
 
 ## Unit Tests To Add
 
-Implemented baseline unit tests:
+Implemented baseline tests:
 
 - Redis key generation
 - required `X-User-Id`
 - required `X-Store-Id`
+- checkout event mapping
+- durable order repository behavior
+- order creation behavior
 
 Add unit tests for:
 
@@ -64,11 +70,18 @@ Add controller tests for:
 
 ## Integration Tests To Add
 
+Implemented integration coverage:
+
+- Flyway migration application
+- JPA order/item/status-history persistence
+- cart id uniqueness
+- item line-number ordering
+- initial order creation for immediate and scheduled orders
+- duplicate cart id handling in order creation
+
 Add integration tests when implemented:
 
 - Redis repositories
-- Flyway migrations
-- JPA queries
 - Kafka consumer idempotency
 - Kafka retry/DLT behavior
 - WebSocket/STOMP subscriptions

@@ -4,22 +4,64 @@
 
 An order represents a checked-out store basket moving through store preparation and delivery.
 
-Planned durable order fields include:
+Current durable order fields include:
 
 - order id
 - cart id
-- user id
+- customer id
 - store id
-- store name
-- items
-- pricing
-- delivery address
+- order items
+- item-level and order-level pricing discounts
+- delivery address JSON snapshot
+- delivery and store coordinates
 - schedule type
 - scheduled time
 - current status
 - cancellation/refund fields
-- verification code fields
+
+Current durable tables:
+
+- `orders`
+- `order_items`
+- `order_status_history`
+
+`orders.cart_id` is unique so duplicate checkout events for the same cart cannot create duplicate orders.
+
+Not yet durable:
+
+- refund execution details
+- verification code state
 - proposal timestamps
+- delivery assignment details
+
+## Order Item
+
+Order items are stored as durable snapshots under `order_items`.
+
+Each item stores:
+
+- product id and product name
+- quantity and product unit
+- unit price
+- gross amount
+- item discount amount
+- net amount
+- image URL
+- line number
+
+`line_number` preserves the cart/receipt item order and is unique per order.
+
+## Status History
+
+`orders.status` stores the latest status. `order_status_history` stores each meaningful status transition for audit, timeline, debugging, and duration metrics.
+
+Example:
+
+```text
+null -> PENDING
+PENDING -> CONFIRMED
+CONFIRMED -> READY_FOR_PICKUP
+```
 
 ## Order Status
 

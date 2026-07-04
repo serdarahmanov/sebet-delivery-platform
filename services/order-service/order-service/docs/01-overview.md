@@ -8,7 +8,7 @@ It receives checkout events, creates orders, exposes customer and store order AP
 
 ## Current Implementation Stage
 
-Implemented skeleton:
+Implemented:
 
 - customer and store REST controllers
 - request and response DTOs
@@ -17,13 +17,19 @@ Implemented skeleton:
 - Redis key registry
 - Redis repository classes
 - MVC interceptors for `X-User-Id` and `X-Store-Id`
+- PostgreSQL order, item, and status-history entities
+- Spring Data JPA repositories
+- Flyway migration for durable order tables
+- internal order creation service
+- checkout confirmed event DTOs
+- checkout event to order creation command mapper
+- repository and order creation integration tests
 
 Pending:
 
-- service layer
-- JPA entities and repository interfaces
-- Flyway migrations
+- REST-facing customer and store service methods
 - Kafka consumers and producers
+- Redis hot-view writes during order creation
 - WebSocket/STOMP broker configuration
 - background jobs
 - driver endpoints

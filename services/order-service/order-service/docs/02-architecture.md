@@ -8,6 +8,7 @@ Orders are not created directly by REST. The planned entry point is a Kafka `Che
 
 ```text
 Kafka checkout event
+  -> checkout event mapper
   -> order creation service
   -> database write
   -> Redis hot cache writes
@@ -30,6 +31,16 @@ com.sebet.order_service
     dto/
     keys/
     repository/
+  integration/
+    checkout/
+      event/
+      mapper/
+  order/
+    command/
+    service/
+  persistence/
+    entity/
+    repository/
   customer/
     controller/
     dto/
@@ -43,6 +54,11 @@ com.sebet.order_service
 ## Implemented Boundaries
 
 - Controllers define endpoint contracts but currently throw `UnsupportedOperationException`.
+- `OrderCreationService` creates durable orders, order items, and initial status history from an internal command.
+- Checkout integration DTOs model the planned cart-service checkout event.
+- `CheckoutConfirmedEventMapper` translates checkout events into order creation commands.
+- JPA entities and repositories own durable order persistence.
+- Flyway owns the current PostgreSQL schema.
 - Redis repositories own cache key usage and low-level Redis operations.
 - `RedisKeys` centralizes all Redis key construction.
 - Shared enums avoid duplicate lifecycle values across customer and store DTOs.
@@ -50,9 +66,8 @@ com.sebet.order_service
 
 ## Planned Boundaries
 
-- Services should own business state transitions.
-- Kafka consumers should translate external events into service commands.
-- JPA repositories should own durable order/history queries.
+- Customer/store services should own REST-facing workflows and business state transitions.
+- Kafka consumers should deserialize external events, call mappers, and invoke services.
 - Redis repositories should remain cache-specific and not contain lifecycle policy.
 - WebSocket publisher components should emit live status/tracking updates after state changes.
 
