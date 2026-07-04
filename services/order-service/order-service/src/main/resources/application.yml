@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: order-service
+
+  jpa:
+    open-in-view: false

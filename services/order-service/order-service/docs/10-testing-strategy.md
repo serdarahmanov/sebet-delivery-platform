@@ -2,11 +2,14 @@
 
 ## Current Tests
 
-The project currently has the generated application context test:
+The project currently has a Spring context test:
 
 ```text
 OrderServiceApplicationTests
 ```
+
+This test uses Testcontainers to start PostgreSQL, Redis, and Kafka, then boots
+the application with the `test` Spring profile.
 
 ## Test Commands
 
@@ -15,6 +18,11 @@ Run all tests:
 ```powershell
 .\mvnw.cmd test
 ```
+
+On Windows, the `windows-testcontainers` Maven profile is activated
+automatically. It configures Surefire with the Docker Desktop named pipe and
+Docker API version required by Testcontainers, so no manual environment setup is
+needed for the normal test command.
 
 Run one test class:
 
@@ -30,13 +38,18 @@ Compile without running tests:
 
 ## Unit Tests To Add
 
+Implemented baseline unit tests:
+
+- Redis key generation
+- required `X-User-Id`
+- required `X-Store-Id`
+
 Add unit tests for:
 
 - status transition rules
 - cancellation rules
 - proposal resolution rules
 - timeline mapping
-- Redis key generation
 - Redis repository serialization/deserialization
 - active-order removal Lua behavior
 - lock release Lua behavior
@@ -45,8 +58,6 @@ Add unit tests for:
 
 Add controller tests for:
 
-- required `X-User-Id`
-- required `X-Store-Id`
 - request validation
 - route mappings
 - planned status codes

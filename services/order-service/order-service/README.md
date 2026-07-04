@@ -9,7 +9,7 @@ The service is designed to receive checkout confirmations from cart-service, cre
 - Java 17
 - Spring Boot 4
 - Spring Web MVC
-- Spring WebFlux
+- Spring WebSocket
 - Spring Data Redis
 - Spring Data JPA
 - Spring Kafka
@@ -62,11 +62,17 @@ Build the project:
 .\mvnw.cmd test
 ```
 
+Tests use Testcontainers for PostgreSQL, Redis, and Kafka. Docker Desktop must
+be running before executing the test command.
+
 ## Environment
 
 Use [.env.example](.env.example) as the starting point for expected runtime settings.
 
-The current `application.properties` only sets the service name. Redis, PostgreSQL, Kafka, and downstream/event settings still need full runtime configuration before this service can run as a complete order processor.
+The current `application.yml` only sets the service name. Production
+environment-backed settings live in `application-prod.yml`. Redis, PostgreSQL,
+Kafka, and downstream/event settings still need full runtime configuration
+before this service can run as a complete order processor.
 
 ## Documentation
 

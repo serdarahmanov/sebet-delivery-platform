@@ -79,3 +79,6 @@ No Flyway migration currently exists in this service.
 ## Data Rule
 
 Redis supports fast active-order reads and live state. PostgreSQL should remain the durable source for order history, terminal receipts, and audit/status history.
+
+JPA Open Session in View is disabled. Service methods should load and map all
+data needed by REST responses inside explicit transactional boundaries.
