@@ -34,6 +34,7 @@ com.sebet.order_service
     dto/
     keys/
     repository/
+    service/
   integration/
     checkout/
       consumer/
@@ -53,6 +54,7 @@ com.sebet.order_service
     dto/
   shared/
     enums/
+    exception/
 ```
 
 ## Implemented Boundaries
@@ -70,6 +72,7 @@ com.sebet.order_service
 - `RedisKeys` centralizes all Redis key construction.
 - Shared enums avoid duplicate lifecycle values across customer and store DTOs.
 - Interceptors enforce identity headers by endpoint family.
+- `GlobalExceptionHandler` maps common exceptions to a consistent `ErrorResponse` JSON shape across all REST endpoints.
 
 ## Planned Boundaries
 

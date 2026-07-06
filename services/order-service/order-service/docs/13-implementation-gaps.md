@@ -84,11 +84,17 @@ Pending:
 
 ## Error Handling
 
+Implemented:
+
+- `GlobalExceptionHandler` (`@RestControllerAdvice`) mapping common exceptions to consistent HTTP responses
+- `ErrorResponse` record (`shared/exception/`) with `code`, `message`, and `timestamp` fields
+- Input validation for amount fields (`>= 0`) in `CheckoutConfirmedEvent` and `CreateOrderCommand` compact constructors
+- `deliveryAddressJson` JSON parse validation in `OrderCreationService` before DB write
+
 Pending:
 
-- global exception handler
-- standard error DTO
-- stable error codes
+- domain-specific error codes (`ORDER_NOT_FOUND`, `ORDER_NOT_CANCELLABLE`, etc.) as service layer is implemented
+- `403 Forbidden` and `409 Conflict` handling once lifecycle transition rules are enforced
 
 ## Deployment
 

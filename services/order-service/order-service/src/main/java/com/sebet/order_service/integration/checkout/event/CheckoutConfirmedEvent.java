@@ -36,6 +36,11 @@ public record CheckoutConfirmedEvent(
         Objects.requireNonNull(totalAmount, "totalAmount must not be null");
         Objects.requireNonNull(currency, "currency must not be null");
         Objects.requireNonNull(deliveryAddress, "deliveryAddress must not be null");
+        if (subtotalAmount.signum() < 0) throw new IllegalArgumentException("subtotalAmount must be >= 0");
+        if (itemDiscountAmount.signum() < 0) throw new IllegalArgumentException("itemDiscountAmount must be >= 0");
+        if (orderDiscountAmount.signum() < 0) throw new IllegalArgumentException("orderDiscountAmount must be >= 0");
+        if (deliveryFeeAmount.signum() < 0) throw new IllegalArgumentException("deliveryFeeAmount must be >= 0");
+        if (totalAmount.signum() < 0) throw new IllegalArgumentException("totalAmount must be >= 0");
         items = List.copyOf(Objects.requireNonNull(items, "items must not be null"));
         if (items.isEmpty()) {
             throw new IllegalArgumentException("items must not be empty");

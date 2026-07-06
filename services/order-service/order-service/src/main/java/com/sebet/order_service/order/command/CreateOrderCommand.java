@@ -41,6 +41,11 @@ public record CreateOrderCommand(
         Objects.requireNonNull(deliveryAddressJson, "deliveryAddressJson must not be null");
         Objects.requireNonNull(deliveryLat, "deliveryLat must not be null");
         Objects.requireNonNull(deliveryLng, "deliveryLng must not be null");
+        if (subtotalAmount.signum() < 0) throw new IllegalArgumentException("subtotalAmount must be >= 0");
+        if (itemDiscountAmount.signum() < 0) throw new IllegalArgumentException("itemDiscountAmount must be >= 0");
+        if (orderDiscountAmount.signum() < 0) throw new IllegalArgumentException("orderDiscountAmount must be >= 0");
+        if (deliveryFeeAmount.signum() < 0) throw new IllegalArgumentException("deliveryFeeAmount must be >= 0");
+        if (totalAmount.signum() < 0) throw new IllegalArgumentException("totalAmount must be >= 0");
         if (scheduleType == ScheduleType.SCHEDULED) {
             Objects.requireNonNull(scheduledFor, "scheduledFor must not be null when scheduleType is SCHEDULED");
         }

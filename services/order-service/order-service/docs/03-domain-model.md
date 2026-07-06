@@ -78,6 +78,29 @@ Current enum values:
 - `SCHEDULED`
 - `AWAITING_CUSTOMER_RESPONSE`
 
+## Cancellation Enums
+
+`OrderCancelledBy` records who initiated the cancellation:
+
+- `USER` — customer cancelled through the app
+- `STORE` — store rejected or cancelled the order
+- `SYSTEM` — platform cancelled automatically (timeout, payment failure, system error)
+
+`OrderCancellationReason` records why it was cancelled:
+
+- `USER_REQUESTED`, `STORE_REJECTED`, `OUT_OF_STOCK`, `STORE_CLOSED`, `STORE_UNABLE_TO_FULFIL`
+- `NO_RIDERS_AVAILABLE`, `PAYMENT_FAILED`, `STORE_RESPONSE_TIMEOUT`
+- `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`, `SYSTEM_ERROR`
+
+## Refund Status
+
+`RefundStatus` tracks the post-cancellation refund state:
+
+- `REFUND_PENDING` — refund initiated but not yet settled
+- `REFUNDED` — refund successfully completed
+
+Not yet wired to any durable field; reserved for the refund workflow.
+
 ## Active Order
 
 Active orders are non-terminal orders shown to customer and store clients.

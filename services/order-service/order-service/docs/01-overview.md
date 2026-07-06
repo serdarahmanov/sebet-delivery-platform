@@ -28,6 +28,8 @@ Implemented:
 - Redis lock for checkout order creation
 - Redis hot-view writes during checkout order creation
 - repository, order creation, and Kafka listener integration tests
+- global exception handler with consistent error response shape
+- input validation for amount fields and delivery address JSON
 
 Pending:
 
@@ -37,7 +39,6 @@ Pending:
 - WebSocket/STOMP broker configuration
 - background jobs
 - driver endpoints
-- global error handling
 
 ## Users
 

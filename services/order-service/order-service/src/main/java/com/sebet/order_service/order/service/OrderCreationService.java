@@ -1,5 +1,7 @@
 package com.sebet.order_service.order.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.cache.service.OrderCreationRedisWriter;
 import com.sebet.order_service.order.command.CreateOrderCommand;
 import com.sebet.order_service.order.command.CreateOrderItemCommand;
@@ -35,6 +37,7 @@ public class OrderCreationService {
     private final OrderItemRepository orderItemRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
     private final OrderCreationRedisWriter orderCreationRedisWriter;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public CreateOrderResult createOrder(CreateOrderCommand command) {
@@ -47,6 +50,7 @@ public class OrderCreationService {
     }
 
     private CreateOrderResult createNewOrder(CreateOrderCommand command) {
+        validateDeliveryAddressJson(command.deliveryAddressJson());
         OffsetDateTime now = OffsetDateTime.now();
         OrderStatus initialStatus = initialStatus(command.scheduleType());
 
@@ -112,6 +116,14 @@ public class OrderCreationService {
         }
 
         writeRedisViews.run();
+    }
+
+    private void validateDeliveryAddressJson(String json) {
+        try {
+            objectMapper.readTree(json);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalArgumentException("deliveryAddressJson is not valid JSON: " + ex.getOriginalMessage(), ex);
+        }
     }
 
     private OrderStatus initialStatus(ScheduleType scheduleType) {
