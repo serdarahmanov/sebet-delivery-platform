@@ -4,6 +4,7 @@ import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedEvent
 import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedItem;
 import com.sebet.order_service.integration.checkout.event.CheckoutDeliveryAddress;
 import com.sebet.order_service.integration.checkout.event.CheckoutStoreLocation;
+import com.sebet.order_service.cache.repository.OrderLockRedisRepository;
 import com.sebet.order_service.order.command.CreateOrderCommand;
 import com.sebet.order_service.order.service.OrderCreationService;
 import com.sebet.order_service.shared.enums.ProductUnit;
@@ -16,6 +17,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -92,6 +94,15 @@ class CheckoutConfirmedEventKafkaDltIntegrationTest {
 
     @MockitoBean
     private OrderCreationService orderCreationService;
+
+    @MockitoBean
+    private OrderLockRedisRepository orderLockRedisRepository;
+
+    @BeforeEach
+    void allowCheckoutLock() {
+        when(orderLockRedisRepository.tryAcquire(any(), any())).thenReturn(true);
+        when(orderLockRedisRepository.release(any(), any())).thenReturn(true);
+    }
 
     @Test
     void sendsFailedCheckoutEventToDltAfterRetriesAreExhausted() throws Exception {

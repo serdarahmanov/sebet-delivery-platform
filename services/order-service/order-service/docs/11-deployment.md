@@ -43,6 +43,7 @@ Expected categories:
 
 - datasource URL/user/password
 - Redis host/port/password
+- optional service instance id for Redis checkout-lock ownership
 - Kafka bootstrap servers
 - consumed topic names
 - produced topic names
@@ -58,7 +59,7 @@ Expected categories:
 
 ## Operational Rule
 
-Do not deploy as a production order processor until service layer, persistence, event consumers, idempotency, and error handling are implemented and tested.
+Do not deploy as a complete production order processor until REST-facing service workflows, remaining event consumers/producers, Redis hot-view writes, and error handling are implemented and tested.
 
 For checkout event consumption, do not disable DLT topic validation in production
 unless topic readiness is enforced by another deployment gate.

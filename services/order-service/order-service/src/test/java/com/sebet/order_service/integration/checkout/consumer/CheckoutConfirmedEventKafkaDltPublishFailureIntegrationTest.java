@@ -4,6 +4,7 @@ import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedEvent
 import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedItem;
 import com.sebet.order_service.integration.checkout.event.CheckoutDeliveryAddress;
 import com.sebet.order_service.integration.checkout.event.CheckoutStoreLocation;
+import com.sebet.order_service.cache.repository.OrderLockRedisRepository;
 import com.sebet.order_service.order.command.CreateOrderCommand;
 import com.sebet.order_service.order.service.OrderCreationService;
 import com.sebet.order_service.shared.enums.ProductUnit;
@@ -14,6 +15,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -97,7 +99,16 @@ class CheckoutConfirmedEventKafkaDltPublishFailureIntegrationTest {
     private OrderCreationService orderCreationService;
 
     @MockitoBean
+    private OrderLockRedisRepository orderLockRedisRepository;
+
+    @MockitoBean
     private DeadLetterPublishingRecoverer deadLetterPublishingRecoverer;
+
+    @BeforeEach
+    void allowCheckoutLock() {
+        when(orderLockRedisRepository.tryAcquire(any(), any())).thenReturn(true);
+        when(orderLockRedisRepository.release(any(), any())).thenReturn(true);
+    }
 
     @Test
     void doesNotCommitSourceOffsetWhenDltPublishFails() throws Exception {

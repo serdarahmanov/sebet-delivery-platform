@@ -43,16 +43,16 @@ Implemented:
 - checkout confirmed event DTOs
 - checkout event to order creation command mapper
 - checkout event consumer
-- real-broker Kafka listener integration test
+- real-broker Kafka listener integration tests
 - checkout event retry and DLT handling
 - checkout DLT topic startup validation
 - Kafka retry/DLT integration coverage for retryable, non-retryable, malformed payload, partition/key preservation, and DLT publish failure paths
+- Redis lock integration for checkout event handling
 
 Pending:
 
 - delivery arrival consumer
 - order event publisher
-- Redis lock integration for checkout event handling
 
 ## Background Jobs
 

@@ -8,9 +8,12 @@ Orders are not created directly by REST. The implemented entry point is a Kafka 
 
 ```text
 Kafka checkout event
+  -> Redis checkout lock
   -> checkout event mapper
   -> order creation service
   -> database write
+
+Planned after durable order creation
   -> Redis hot cache writes
   -> order event publishing
 
@@ -58,7 +61,8 @@ com.sebet.order_service
 - `OrderCreationService` creates durable orders, order items, and initial status history from an internal command.
 - Checkout integration DTOs model the cart-service checkout event.
 - `CheckoutConfirmedEventMapper` translates checkout events into order creation commands.
-- `CheckoutConfirmedEventConsumer` listens for checkout events and invokes order creation.
+- `CheckoutConfirmedEventConsumer` listens for checkout events and delegates processing.
+- `CheckoutConfirmedEventProcessor` acquires `order:lock:{cartId}`, invokes order creation, and releases the lock.
 - JPA entities and repositories own durable order persistence.
 - Flyway owns the current PostgreSQL schema.
 - Redis repositories own cache key usage and low-level Redis operations.

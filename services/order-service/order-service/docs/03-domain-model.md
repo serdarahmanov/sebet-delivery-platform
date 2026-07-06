@@ -119,7 +119,7 @@ Cache key:
 order:verification:{orderId}
 ```
 
-The current code contains the Redis DTO and repository foundation; event consumer and driver verification endpoint are pending.
+The current code contains the Redis DTO and repository foundation. The delivery-arrival event consumer and driver verification endpoint are pending.
 
 ## Timeline
 

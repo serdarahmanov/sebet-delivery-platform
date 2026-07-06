@@ -24,6 +24,8 @@ Implemented:
 - checkout confirmed event DTOs
 - checkout event to order creation command mapper
 - checkout event Kafka consumer
+- checkout event retry and dead-letter handling
+- Redis lock for checkout order creation
 - repository, order creation, and Kafka listener integration tests
 
 Pending:
@@ -31,7 +33,6 @@ Pending:
 - REST-facing customer and store service methods
 - order event producers
 - delivery-arrival Kafka consumer
-- Kafka retry and dead-letter handling
 - Redis hot-view writes during order creation
 - WebSocket/STOMP broker configuration
 - background jobs

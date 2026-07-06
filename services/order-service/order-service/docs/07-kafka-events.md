@@ -4,7 +4,7 @@
 
 | Topic | Event | Purpose | Status |
 |---|---|---|---|
-| `checkout-events` | `CheckoutConfirmedEvent` | Create order from cart checkout | Consumer, DTO, mapper, DB creation, retry, and DLT handling implemented |
+| `checkout-events` | `CheckoutConfirmedEvent` | Create order from cart checkout | Consumer, DTO, mapper, Redis lock, DB creation, retry, and DLT handling implemented |
 | `order.arrived` | `OrderArrivedEvent` | Generate delivery verification code and update tracking | Pending |
 
 ## Planned Produced Topics
@@ -21,8 +21,8 @@
 Target flow:
 
 1. Consume `CheckoutConfirmedEvent`.
-2. Map it to `CreateOrderCommand`.
-3. Acquire `order:lock:{cartId}`.
+2. Acquire `order:lock:{cartId}`.
+3. Map it to `CreateOrderCommand`.
 4. Persist order in PostgreSQL.
 5. Write Redis hot keys.
 6. Publish order-created/status event.
@@ -36,6 +36,7 @@ Implemented pieces:
 - `CheckoutStoreLocation`
 - `CheckoutConfirmedEventMapper`
 - `CheckoutConfirmedEventConsumer`
+- `CheckoutConfirmedEventProcessor`
 - `OrderCreationService`
 
 The mapper preserves item order, item-level discounts, order-level discounts, address snapshot, delivery coordinates, store coordinates, schedule type, and `cartId`.
@@ -43,13 +44,14 @@ The mapper preserves item order, item-level discounts, order-level discounts, ad
 Currently implemented in the flow:
 
 - consume `CheckoutConfirmedEvent`
+- acquire and release `order:lock:{cartId}` around order creation
 - map it to `CreateOrderCommand`
 - persist order, order items, and initial status history in PostgreSQL
 - handle duplicate checkout events through `orders.cart_id` idempotency
 
 ## Current Implementation Status
 
-Spring Kafka dependencies are present. The checkout event consumer is implemented and delegates to the mapper and `OrderCreationService`. It can consume real Kafka events when its listener startup property is enabled and `spring.kafka.bootstrap-servers` points to a broker.
+Spring Kafka dependencies are present. The checkout event consumer is implemented and delegates to `CheckoutConfirmedEventProcessor`, which acquires the Redis checkout lock, maps the event, and calls `OrderCreationService`. It can consume real Kafka events when its listener startup property is enabled and `spring.kafka.bootstrap-servers` points to a broker.
 
 Checkout event retry and DLT handling are implemented with Spring Kafka container infrastructure:
 
@@ -94,9 +96,11 @@ This prevents losing a checkout event that was neither processed successfully no
 
 Kafka producers for business events and the delivery-arrival consumer are not implemented yet.
 
-Duplicate checkout creation is protected at the database level by the unique `orders.cart_id` index. `OrderCreationService` also returns the existing order when the cart id has already been processed.
+Concurrent checkout creation is guarded by `order:lock:{cartId}`. If another service instance already holds that lock, processing fails with a retryable exception so Spring Kafka can redeliver the record according to the configured retry policy. Duplicate checkout creation is still protected at the database level by the unique `orders.cart_id` index. `OrderCreationService` also returns the existing order when the cart id has already been processed.
 
-The Kafka listener is covered by integration tests that start real Kafka brokers and PostgreSQL databases with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON deserialization failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding.
+The Redis lock owner value comes from `order-service.instance-id`. If it is not configured, the service uses `${spring.application.name}-${random.uuid}`, which gives each running replica a distinct owner value.
+
+The checkout processor is covered by unit tests for successful creation, duplicate handling, failure release, lock contention, release failure, and concurrent duplicate checkout events. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON deserialization failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding.
 
 ## Design Rule
 
