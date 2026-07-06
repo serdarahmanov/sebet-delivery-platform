@@ -13,9 +13,9 @@ Kafka checkout event
   -> order creation service
   -> database write
 
-Planned after durable order creation
+After durable order creation
   -> Redis hot cache writes
-  -> order event publishing
+  -> order event publishing (planned)
 
 Customer/store REST
   -> controllers
@@ -63,6 +63,7 @@ com.sebet.order_service
 - `CheckoutConfirmedEventMapper` translates checkout events into order creation commands.
 - `CheckoutConfirmedEventConsumer` listens for checkout events and delegates processing.
 - `CheckoutConfirmedEventProcessor` acquires `order:lock:{cartId}`, invokes order creation, and releases the lock.
+- `OrderCreationService` and `OrderCreationRedisWriter` populate Redis hot views after the order transaction commits, using the current database order and history as the source of truth for replay safety.
 - JPA entities and repositories own durable order persistence.
 - Flyway owns the current PostgreSQL schema.
 - Redis repositories own cache key usage and low-level Redis operations.

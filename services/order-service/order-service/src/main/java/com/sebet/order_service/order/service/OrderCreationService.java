@@ -1,5 +1,6 @@
 package com.sebet.order_service.order.service;
 
+import com.sebet.order_service.cache.service.OrderCreationRedisWriter;
 import com.sebet.order_service.order.command.CreateOrderCommand;
 import com.sebet.order_service.order.command.CreateOrderItemCommand;
 import com.sebet.order_service.order.command.CreateOrderResult;
@@ -12,13 +13,17 @@ import com.sebet.order_service.persistence.repository.OrderStatusHistoryReposito
 import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ScheduleType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderCreationService {
@@ -29,11 +34,15 @@ public class OrderCreationService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
+    private final OrderCreationRedisWriter orderCreationRedisWriter;
 
     @Transactional
     public CreateOrderResult createOrder(CreateOrderCommand command) {
         return orderRepository.findByCartId(command.cartId())
-                .map(existingOrder -> new CreateOrderResult(existingOrder, false))
+                .map(existingOrder -> {
+                    registerRedisInitialization(existingOrder);
+                    return new CreateOrderResult(existingOrder, false);
+                })
                 .orElseGet(() -> createNewOrder(command));
     }
 
@@ -73,7 +82,36 @@ public class OrderCreationService {
                 .createdAt(now)
                 .build());
 
+        registerRedisInitialization(order);
         return new CreateOrderResult(order, true);
+    }
+
+    private void registerRedisInitialization(OrderEntity order) {
+        Runnable writeRedisViews = () -> {
+            try {
+                orderCreationRedisWriter.ensureCreatedOrder(order);
+            } catch (RuntimeException exception) {
+                log.error(
+                        "Failed to initialize Redis order views for orderId={} cartId={}",
+                        order.getId(),
+                        order.getCartId(),
+                        exception
+                );
+                throw exception;
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    writeRedisViews.run();
+                }
+            });
+            return;
+        }
+
+        writeRedisViews.run();
     }
 
     private OrderStatus initialStatus(ScheduleType scheduleType) {

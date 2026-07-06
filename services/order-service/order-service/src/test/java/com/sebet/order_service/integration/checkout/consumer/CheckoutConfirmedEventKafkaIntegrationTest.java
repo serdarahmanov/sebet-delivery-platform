@@ -4,6 +4,13 @@ import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedEvent
 import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedItem;
 import com.sebet.order_service.integration.checkout.event.CheckoutDeliveryAddress;
 import com.sebet.order_service.integration.checkout.event.CheckoutStoreLocation;
+import com.sebet.order_service.cache.dto.OrderTimelineEntry;
+import com.sebet.order_service.cache.repository.ActiveOrdersRedisRepository;
+import com.sebet.order_service.cache.repository.OrderRedisRepository;
+import com.sebet.order_service.cache.repository.OrderStatusRedisRepository;
+import com.sebet.order_service.cache.repository.OrderTimelineRedisRepository;
+import com.sebet.order_service.cache.repository.StoreActiveOrdersRedisRepository;
+import com.sebet.order_service.cache.repository.StoreScheduledOrdersRedisRepository;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
@@ -87,6 +94,24 @@ class CheckoutConfirmedEventKafkaIntegrationTest {
     @Autowired
     private OrderStatusHistoryRepository orderStatusHistoryRepository;
 
+    @Autowired
+    private OrderRedisRepository orderRedisRepository;
+
+    @Autowired
+    private OrderStatusRedisRepository orderStatusRedisRepository;
+
+    @Autowired
+    private ActiveOrdersRedisRepository activeOrdersRedisRepository;
+
+    @Autowired
+    private StoreActiveOrdersRedisRepository storeActiveOrdersRedisRepository;
+
+    @Autowired
+    private StoreScheduledOrdersRedisRepository storeScheduledOrdersRedisRepository;
+
+    @Autowired
+    private OrderTimelineRedisRepository orderTimelineRedisRepository;
+
     @Test
     void consumesCheckoutConfirmedEventFromKafkaAndCreatesOrder() throws Exception {
         CheckoutConfirmedEvent event = checkoutEvent("cart-kafka-it-1");
@@ -110,6 +135,25 @@ class CheckoutConfirmedEventKafkaIntegrationTest {
         assertThat(orderStatusHistoryRepository.findByOrderIdOrderByCreatedAtAsc(order.getId()))
                 .extracting(OrderStatusHistoryEntity::getFromStatus, OrderStatusHistoryEntity::getToStatus)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple(null, OrderStatus.PENDING));
+
+        assertThat(orderStatusRedisRepository.findById(order.getId().toString()))
+                .hasValue(OrderStatus.PENDING.name());
+
+        assertThat(orderTimelineRedisRepository.findAll(order.getId().toString()))
+                .singleElement()
+                .extracting(OrderTimelineEntry::getStatus)
+                .isEqualTo("PLACED");
+
+        assertThat(orderRedisRepository.findById(order.getId().toString()))
+                .hasValueSatisfying(snapshot -> {
+                    assertThat(snapshot.getOrderId()).isEqualTo(order.getId().toString());
+                    assertThat(snapshot.getUserId()).isEqualTo("customer-1");
+                    assertThat(snapshot.getStoreId()).isEqualTo("store-1");
+                });
+
+        assertThat(activeOrdersRedisRepository.contains("customer-1", order.getId().toString())).isTrue();
+        assertThat(storeActiveOrdersRedisRepository.contains("store-1", order.getId().toString())).isTrue();
+        assertThat(storeScheduledOrdersRedisRepository.contains("store-1", order.getId().toString())).isFalse();
     }
 
     private OrderEntity awaitOrderByCartId(String cartId, Duration timeout) throws InterruptedException {

@@ -24,7 +24,7 @@ Target flow:
 2. Acquire `order:lock:{cartId}`.
 3. Map it to `CreateOrderCommand`.
 4. Persist order in PostgreSQL.
-5. Write Redis hot keys.
+5. Write Redis hot keys after commit.
 6. Publish order-created/status event.
 7. Release lock.
 
@@ -38,6 +38,7 @@ Implemented pieces:
 - `CheckoutConfirmedEventConsumer`
 - `CheckoutConfirmedEventProcessor`
 - `OrderCreationService`
+- `OrderCreationRedisWriter`
 
 The mapper preserves item order, item-level discounts, order-level discounts, address snapshot, delivery coordinates, store coordinates, schedule type, and `cartId`.
 
@@ -48,6 +49,7 @@ Currently implemented in the flow:
 - map it to `CreateOrderCommand`
 - persist order, order items, and initial status history in PostgreSQL
 - handle duplicate checkout events through `orders.cart_id` idempotency
+- initialize the Redis snapshot, status, timeline, and active/scheduled membership after commit
 
 ## Current Implementation Status
 
@@ -97,6 +99,8 @@ This prevents losing a checkout event that was neither processed successfully no
 Kafka producers for business events and the delivery-arrival consumer are not implemented yet.
 
 Concurrent checkout creation is guarded by `order:lock:{cartId}`. If another service instance already holds that lock, processing fails with a retryable exception so Spring Kafka can redeliver the record according to the configured retry policy. Duplicate checkout creation is still protected at the database level by the unique `orders.cart_id` index. `OrderCreationService` also returns the existing order when the cart id has already been processed.
+
+If a replay happens after a partial Redis failure, the cache write-through path is idempotent and rebuilds missing hot-view keys from the current database order state instead of replaying stale checkout payload data.
 
 The Redis lock owner value comes from `order-service.instance-id`. If it is not configured, the service uses `${spring.application.name}-${random.uuid}`, which gives each running replica a distinct owner value.
 

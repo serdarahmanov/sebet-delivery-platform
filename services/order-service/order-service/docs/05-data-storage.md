@@ -19,7 +19,6 @@ Implemented:
 
 Pending:
 
-- Redis hot-view writes during order creation.
 - Durable proposal/refund/verification extensions if those states need long-term storage.
 
 ## Redis Key Registry
@@ -86,6 +85,15 @@ Delivery address is stored as `jsonb` because it is a checkout-time snapshot own
 ## Data Rule
 
 Redis supports fast active-order reads and live state. PostgreSQL should remain the durable source for order history, terminal receipts, and audit/status history.
+
+New checkout orders now populate the hot-view keys after the database transaction commits, with any replay rebuilding the cache from the current database order state rather than the original checkout payload:
+
+- `order:{orderId}` snapshot
+- `order:status:{orderId}`
+- `order:timeline:{orderId}`
+- `user:active_orders:{userId}` for immediate orders
+- `store:active_orders:{storeId}` for immediate orders
+- `store:scheduled_orders:{storeId}` for scheduled orders
 
 JPA Open Session in View is disabled. Service methods should load and map all
 data needed by REST responses inside explicit transactional boundaries.

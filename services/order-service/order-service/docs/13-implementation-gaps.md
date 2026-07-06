@@ -13,6 +13,7 @@ UnsupportedOperationException("Not implemented yet")
 Implemented:
 
 - `OrderCreationService` creates durable orders from internal checkout commands.
+- Redis hot-view initialization for created orders from current database state.
 
 Pending:
 
@@ -20,6 +21,7 @@ Pending:
 - store-facing service methods
 - order status transition service methods
 - proposals, tracking, verification, cancellation, and delivery completion behavior
+- hot-view repair for non-checkout write paths
 
 ## Database
 
@@ -48,6 +50,7 @@ Implemented:
 - checkout DLT topic startup validation
 - Kafka retry/DLT integration coverage for retryable, non-retryable, malformed payload, partition/key preservation, and DLT publish failure paths
 - Redis lock integration for checkout event handling
+- Redis hot-view initialization for created orders from current database state
 
 Pending:
 

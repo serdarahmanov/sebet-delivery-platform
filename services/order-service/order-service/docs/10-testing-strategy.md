@@ -54,6 +54,7 @@ Implemented baseline tests:
 - checkout Kafka listener integration
 - durable order repository behavior
 - order creation behavior
+- Redis hot-view writes for immediate and scheduled order creation
 
 Add unit tests for:
 
@@ -84,6 +85,7 @@ Implemented integration coverage:
 - initial order creation for immediate and scheduled orders
 - duplicate cart id handling in order creation
 - checkout event processor mapping, lock handling, and duplicate-path behavior
+- checkout event processor Redis hot-view initialization and recovery behavior from current database state
 - Kafka listener integration against a real broker
 - Kafka retry/DLT behavior
 - checkout event consumption with Redis lock support

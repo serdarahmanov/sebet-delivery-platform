@@ -59,7 +59,7 @@ Expected categories:
 
 ## Operational Rule
 
-Do not deploy as a complete production order processor until REST-facing service workflows, remaining event consumers/producers, Redis hot-view writes, and error handling are implemented and tested.
+Do not deploy as a complete production order processor until REST-facing service workflows, remaining event consumers/producers, lifecycle transition handlers, and error handling are implemented and tested.
 
 For checkout event consumption, do not disable DLT topic validation in production
 unless topic readiness is enforced by another deployment gate.

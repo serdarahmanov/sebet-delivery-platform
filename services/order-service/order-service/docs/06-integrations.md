@@ -14,7 +14,7 @@ Source topic:
 checkout-events
 ```
 
-Order-service consumes this event, guards order creation with `order:lock:{cartId}`, creates the durable order, and handles retry/DLT failures. Redis hot-view initialization and order-created/status publishing are still pending.
+Order-service consumes this event, guards order creation with `order:lock:{cartId}`, creates the durable order, and initializes Redis hot views after the transaction commits from the current database order state. Order-created/status publishing is still pending.
 
 ## Delivery Service
 
@@ -50,4 +50,4 @@ Store clients use:
 
 ## Integration Status
 
-The contracts are documented in controllers and DTOs. The checkout event consumer is implemented. The delivery-arrival consumer, event publishers, driver endpoints, and WebSocket broker are pending.
+The contracts are documented in controllers and DTOs. The checkout event consumer and Redis hot-view write-through path are implemented. The delivery-arrival consumer, event publishers, driver endpoints, and WebSocket broker are pending.

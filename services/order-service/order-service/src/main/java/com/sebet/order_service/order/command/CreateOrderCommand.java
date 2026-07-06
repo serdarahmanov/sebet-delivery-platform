@@ -41,6 +41,9 @@ public record CreateOrderCommand(
         Objects.requireNonNull(deliveryAddressJson, "deliveryAddressJson must not be null");
         Objects.requireNonNull(deliveryLat, "deliveryLat must not be null");
         Objects.requireNonNull(deliveryLng, "deliveryLng must not be null");
+        if (scheduleType == ScheduleType.SCHEDULED) {
+            Objects.requireNonNull(scheduledFor, "scheduledFor must not be null when scheduleType is SCHEDULED");
+        }
         items = List.copyOf(Objects.requireNonNull(items, "items must not be null"));
         if (items.isEmpty()) {
             throw new IllegalArgumentException("items must not be empty");
