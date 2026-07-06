@@ -6,11 +6,21 @@
 PENDING
   -> CONFIRMED
   -> READY_FOR_PICKUP
-  -> DRIVER_ASSIGNED
   -> OUT_FOR_DELIVERY
   -> ARRIVED
   -> DELIVERED
 ```
+
+## Driver Assignment
+
+Driver assignment is NOT a status step. It is stored as `driverId` and `driverAssignedAt` metadata fields on the order.
+
+A courier can be dispatched before or after the store marks `READY_FOR_PICKUP` — the two tracks are independent. The driver's pickup call (`POST /api/v1/driver/orders/{orderId}/pickup`) transitions `READY_FOR_PICKUP → OUT_FOR_DELIVERY` and requires both conditions to be satisfied:
+
+1. Order status is `READY_FOR_PICKUP`
+2. `driverId` is set on the order
+
+If the driver arrives at the store before the order is ready, they wait — the status remains `READY_FOR_PICKUP` until both conditions are true.
 
 ## Scheduled Flow
 

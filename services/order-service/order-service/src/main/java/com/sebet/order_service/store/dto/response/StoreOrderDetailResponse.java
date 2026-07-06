@@ -24,7 +24,7 @@ import java.util.List;
  *
  * Works for any order status — active, delivered, or cancelled.
  *
- * {@code driver}          — null until DRIVER_ASSIGNED.
+ * {@code driver}          — null until a driver is assigned.
  * {@code cancellation}    — non-null only when {@code status == CANCELLED}.
  * {@code pendingProposal} — non-null only when {@code status == AWAITING_CUSTOMER_RESPONSE};
  *                           contains the exact proposal the store submitted so staff can
@@ -60,7 +60,7 @@ public record StoreOrderDetailResponse(
         List<TimelineStepResponse> timeline,
 
         /**
-         * Assigned courier's profile — non-null from DRIVER_ASSIGNED onward.
+         * Assigned courier's profile — non-null once a driver is assigned.
          */
         DriverDto driver,
 
@@ -82,7 +82,7 @@ public record StoreOrderDetailResponse(
 ) {
 
     /**
-     * Static courier profile shown in the order detail from DRIVER_ASSIGNED onward.
+     * Static courier profile shown in the order detail once a driver is assigned.
      */
     public record DriverDto(
             String driverId,

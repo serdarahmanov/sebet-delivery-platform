@@ -17,6 +17,7 @@ Current durable order fields include:
 - schedule type
 - scheduled time
 - current status
+- driver id and assignment timestamp (nullable; set by dispatch service independently of order status)
 - cancellation/refund fields
 
 Current durable tables:
@@ -70,13 +71,14 @@ Current enum values:
 - `PENDING`
 - `CONFIRMED`
 - `READY_FOR_PICKUP`
-- `DRIVER_ASSIGNED`
 - `OUT_FOR_DELIVERY`
 - `ARRIVED`
 - `DELIVERED`
 - `CANCELLED`
 - `SCHEDULED`
 - `AWAITING_CUSTOMER_RESPONSE`
+
+Driver assignment is not a status — see `driverId` / `driverAssignedAt` fields on the Order entity.
 
 ## Cancellation Enums
 
@@ -110,7 +112,6 @@ Examples:
 - `PENDING`
 - `CONFIRMED`
 - `READY_FOR_PICKUP`
-- `DRIVER_ASSIGNED`
 - `OUT_FOR_DELIVERY`
 - `ARRIVED`
 - `AWAITING_CUSTOMER_RESPONSE`
@@ -154,5 +155,3 @@ Customer timeline is a simplified view of internal status:
 | `CONFIRMED`, `READY_FOR_PICKUP` | `PACKED` |
 | `OUT_FOR_DELIVERY` | `ON_THE_WAY` |
 | `DELIVERED` | `ARRIVED` |
-
-`DRIVER_ASSIGNED` is internal and has no customer-facing timeline step.

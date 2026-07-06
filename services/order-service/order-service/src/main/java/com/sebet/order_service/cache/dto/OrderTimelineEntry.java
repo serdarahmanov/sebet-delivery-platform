@@ -19,8 +19,6 @@ import lombok.NoArgsConstructor;
  *   OUT_FOR_DELIVERY     → ON_THE_WAY
  *   DELIVERED            → ARRIVED
  *
- * DRIVER_ASSIGNED has no customer-facing step and is intentionally skipped.
- *
  * Stored as an element in a Redis LIST via RPUSH so insertion order
  * is preserved without explicit sorting.
  *

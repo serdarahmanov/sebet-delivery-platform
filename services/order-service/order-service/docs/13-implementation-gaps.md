@@ -14,6 +14,7 @@ Implemented:
 
 - `OrderCreationService` creates durable orders from internal checkout commands.
 - Redis hot-view initialization for created orders from current database state.
+- `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment modelled as `driverId` / `driverAssignedAt` metadata fields on the order (V2 migration).
 
 Pending:
 

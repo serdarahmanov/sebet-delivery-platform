@@ -25,8 +25,8 @@ import java.util.List;
  * Pickup matching between store and courier is done via the order number, which
  * is visible on both the store's receipt and the courier's app.
  *
- * {@code driver} is null until DRIVER_ASSIGNED.  From that point onward the
- * store can see who is coming to collect the order.
+ * {@code driver} is null until a driver is assigned.  From that point onward
+ * the store can see who is coming to collect the order.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record StoreActiveOrderItemResponse(
@@ -38,7 +38,7 @@ public record StoreActiveOrderItemResponse(
         /**
          * Current order status.
          * Active statuses: {@code PENDING}, {@code CONFIRMED}, {@code READY_FOR_PICKUP},
-         * {@code DRIVER_ASSIGNED}, {@code OUT_FOR_DELIVERY}, {@code ARRIVED}.
+         * {@code OUT_FOR_DELIVERY}, {@code ARRIVED}.
          *
          * {@code AWAITING_CUSTOMER_RESPONSE} also appears here when the store has
          * submitted a change proposal and is waiting for the customer to decide.
@@ -56,7 +56,7 @@ public record StoreActiveOrderItemResponse(
         String createdAt,
 
         /**
-         * Courier's profile — non-null from {@code DRIVER_ASSIGNED} onward.
+         * Courier's profile — non-null once a driver is assigned.
          * Lets store staff know who is coming to collect the order.
          */
         DriverDto driver
@@ -64,7 +64,7 @@ public record StoreActiveOrderItemResponse(
 ) {
 
     /**
-     * Static courier profile displayed to store staff from DRIVER_ASSIGNED onward.
+     * Static courier profile displayed to store staff once a driver is assigned.
      */
     public record DriverDto(
             String driverId,

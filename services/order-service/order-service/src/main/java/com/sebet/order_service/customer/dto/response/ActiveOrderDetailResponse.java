@@ -23,8 +23,8 @@ import java.util.List;
  * All subsequent status transitions, etaMinutes, and GPS coordinates
  * are delivered exclusively via WebSocket (/topic/orders/{orderId}/tracking).
  *
- * {@code driver} is null until the order reaches DRIVER_ASSIGNED status —
- * it is populated from Cache 2 which is updated once when a driver accepts.
+ * {@code driver} is null until a driver is assigned — it is populated from
+ * Cache 2 which is updated once by the internal assign-driver endpoint.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ActiveOrderDetailResponse(
@@ -50,7 +50,7 @@ public record ActiveOrderDetailResponse(
 
         /**
          * Static driver profile from Cache 2.
-         * Null until a driver accepts the order (DRIVER_ASSIGNED or beyond).
+         * Null until a driver is assigned; non-null from OUT_FOR_DELIVERY onward.
          * Live GPS is NOT here — it arrives via WebSocket.
          */
         DriverDto driver,

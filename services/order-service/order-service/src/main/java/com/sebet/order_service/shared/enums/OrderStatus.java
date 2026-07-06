@@ -4,8 +4,14 @@ package com.sebet.order_service.shared.enums;
  * All possible statuses an order can hold during its lifecycle.
  *
  * ── Normal flow ──────────────────────────────────────────────────────────────
- *   PENDING → CONFIRMED → READY_FOR_PICKUP → DRIVER_ASSIGNED
- *          → OUT_FOR_DELIVERY → ARRIVED → DELIVERED
+ *   PENDING → CONFIRMED → READY_FOR_PICKUP → OUT_FOR_DELIVERY → ARRIVED → DELIVERED
+ *
+ * Driver assignment is NOT a status — it is stored as {@code driverId} /
+ * {@code driverAssignedAt} metadata on the order entity.  A driver can be
+ * dispatched before or after the store marks READY_FOR_PICKUP; the two tracks
+ * are independent.  The driver's pickup call requires both conditions to be met
+ * (order is READY_FOR_PICKUP AND a driver is assigned) before transitioning to
+ * OUT_FOR_DELIVERY.
  *
  * ── Scheduled flow ───────────────────────────────────────────────────────────
  *   SCHEDULED → (enters normal flow at PENDING, 30 min before delivery window)
@@ -19,7 +25,6 @@ package com.sebet.order_service.shared.enums;
  *   CONFIRMED / READY_FOR_PICKUP      → PACKED
  *   OUT_FOR_DELIVERY                  → ON_THE_WAY
  *   DELIVERED                         → ARRIVED
- *   DRIVER_ASSIGNED                   → (no customer-facing step, skipped)
  */
 public enum OrderStatus {
 
@@ -31,9 +36,6 @@ public enum OrderStatus {
 
     /** Order is packed and waiting for a courier to collect. */
     READY_FOR_PICKUP,
-
-    /** A courier has been assigned and is on the way to the store. */
-    DRIVER_ASSIGNED,
 
     /** Courier has collected the order and is delivering it to the customer. */
     OUT_FOR_DELIVERY,

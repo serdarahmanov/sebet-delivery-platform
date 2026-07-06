@@ -165,7 +165,6 @@ public class OrderCreationRedisWriter {
             case PENDING,
                  CONFIRMED,
                  READY_FOR_PICKUP,
-                 DRIVER_ASSIGNED,
                  OUT_FOR_DELIVERY,
                  ARRIVED,
                  AWAITING_CUSTOMER_RESPONSE -> true;

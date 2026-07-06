@@ -289,16 +289,9 @@ class OrderCreationServiceTest {
         orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
                 .orderId(order.getId())
                 .fromStatus(OrderStatus.READY_FOR_PICKUP)
-                .toStatus(OrderStatus.DRIVER_ASSIGNED)
-                .changedByType("DRIVER")
-                .createdAt(baseTime.plusMinutes(15))
-                .build());
-        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
-                .orderId(order.getId())
-                .fromStatus(OrderStatus.DRIVER_ASSIGNED)
                 .toStatus(OrderStatus.OUT_FOR_DELIVERY)
                 .changedByType("DRIVER")
-                .createdAt(baseTime.plusMinutes(20))
+                .createdAt(baseTime.plusMinutes(15))
                 .build());
         orderStatusHistoryRepository.saveAndFlush(OrderStatusHistoryEntity.builder()
                 .orderId(order.getId())

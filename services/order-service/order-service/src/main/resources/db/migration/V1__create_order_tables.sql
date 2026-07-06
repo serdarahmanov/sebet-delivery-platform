@@ -17,6 +17,8 @@ create table orders (
     delivery_lng numeric(9, 6) not null,
     store_lat numeric(9, 6),
     store_lng numeric(9, 6),
+    driver_id varchar(64),
+    driver_assigned_at timestamp with time zone,
     cancellation_reason varchar(80),
     cancelled_by varchar(30),
     created_at timestamp with time zone not null,

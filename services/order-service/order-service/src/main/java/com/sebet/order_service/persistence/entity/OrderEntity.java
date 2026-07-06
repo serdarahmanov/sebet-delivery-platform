@@ -90,6 +90,11 @@ public class OrderEntity {
     @Column(precision = 9, scale = 6)
     private BigDecimal storeLng;
 
+    @Column(length = 64)
+    private String driverId;
+
+    private OffsetDateTime driverAssignedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 80)
     private OrderCancellationReason cancellationReason;
