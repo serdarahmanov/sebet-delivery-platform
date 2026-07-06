@@ -12,6 +12,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
     private final UserIdInterceptor userIdInterceptor;
     private final StoreIdInterceptor storeIdInterceptor;
     private final DriverIdInterceptor driverIdInterceptor;
+    private final InternalAuthInterceptor internalAuthInterceptor;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -26,5 +27,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // Driver-facing endpoints — require X-Driver-Id
         registry.addInterceptor(driverIdInterceptor)
                 .addPathPatterns("/api/v1/driver/**");
+
+        // Internal service-to-service endpoints — require X-Internal-Key
+        registry.addInterceptor(internalAuthInterceptor)
+                .addPathPatterns("/api/v1/internal/**");
     }
 }

@@ -40,8 +40,7 @@ import java.util.List;
  *   POST /api/v1/orders/{orderId}/cancel              → cancel order
  *
  * ── Pending (not yet implemented) ───────────────────────────────────────────
- *   Kafka consumer  : order.arrived event → generates code, writes C7, pushes WS
- *   Driver endpoint : POST /api/v1/driver/orders/{orderId}/verify-code
+ *   Kafka consumer : order.arrived event → generates code, writes C7, pushes WS
  */
 @RestController
 @RequestMapping("/api/v1/orders")

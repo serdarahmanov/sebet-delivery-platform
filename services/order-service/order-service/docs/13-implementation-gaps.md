@@ -14,7 +14,7 @@ Implemented:
 
 - `OrderCreationService` creates durable orders from internal checkout commands.
 - Redis hot-view initialization for created orders from current database state.
-- `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment modelled as `driverId` / `driverAssignedAt` metadata fields on the order (V2 migration).
+- `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment modelled as `driverId` / `driverAssignedAt` metadata fields on the order (added directly to V1 migration).
 
 Pending:
 
@@ -78,10 +78,23 @@ Pending:
 
 ## Driver Endpoints
 
-Pending:
+Implemented (stubs — service layer pending):
 
-- delivery verification endpoint
-- driver tracking update endpoint if order-service owns live tracking writes
+- `GET  /{orderId}` — delivery detail
+- `POST /{orderId}/pickup` — READY_FOR_PICKUP → OUT_FOR_DELIVERY
+- `POST /{orderId}/arrive` — OUT_FOR_DELIVERY → ARRIVED; generates verification code → C7
+- `POST /{orderId}/complete` — ARRIVED → DELIVERED; validates C7 code
+- `POST /{orderId}/decline` — unassigns driver; valid before OUT_FOR_DELIVERY
+
+## Internal Endpoints
+
+Implemented (stubs — service layer pending):
+
+- `POST /{orderId}/assign-driver` — sets driverId + driverAssignedAt (dispatch)
+- `POST /{orderId}/unassign-driver` — clears driverId; valid on any non-terminal status
+- `POST /{orderId}/system-cancel` — system-initiated cancellation
+- `POST /{orderId}/activate-scheduled` — SCHEDULED → PENDING
+- `POST /{orderId}/cancel-proposal` — AWAITING_CUSTOMER_RESPONSE → CANCELLED
 
 ## Error Handling
 

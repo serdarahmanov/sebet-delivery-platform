@@ -84,6 +84,31 @@ to the tracking service, which publishes a `DriverLocationUpdatedEvent`. Order-s
 consumes that event, updates Cache 3 (`movementStatus`, `driverLat`, `driverLng`,
 `etaMinutes`), and pushes a WebSocket message to the customer.
 
+## Internal API
+
+Base path:
+
+```text
+/api/v1/internal/orders
+```
+
+Required header:
+
+```http
+X-Internal-Key: <shared-secret>
+```
+
+Not exposed to customers, stores, or drivers. Intended for the dispatch service,
+internal background job triggers (via admin/ops), and other platform services.
+
+Endpoint groups:
+
+- `POST /api/v1/internal/orders/{orderId}/assign-driver`      — sets driverId + driverAssignedAt (dispatch)
+- `POST /api/v1/internal/orders/{orderId}/unassign-driver`    — clears driverId with no replacement; valid on any non-terminal status
+- `POST /api/v1/internal/orders/{orderId}/system-cancel`      — system-initiated cancellation
+- `POST /api/v1/internal/orders/{orderId}/activate-scheduled` — SCHEDULED → PENDING
+- `POST /api/v1/internal/orders/{orderId}/cancel-proposal`    — AWAITING_CUSTOMER_RESPONSE → CANCELLED
+
 ## Current Implementation Status
 
 The controllers define request mappings and DTO contracts, but every endpoint currently throws:
@@ -112,7 +137,8 @@ Planned status code conventions:
 
 - `200 OK`: successful reads and actions with response body.
 - `302 Found`: smart customer order router redirects to status-specific detail endpoints.
-- `400 Bad Request`: missing or invalid required identity header.
-- `403 Forbidden`: store attempts to access an order it does not own.
+- `400 Bad Request`: missing or invalid required identity header (`X-User-Id`, `X-Store-Id`, `X-Driver-Id`).
+- `401 Unauthorized`: missing `X-Internal-Key` header on internal endpoints.
+- `403 Forbidden`: invalid `X-Internal-Key` value; or store attempts to access an order it does not own.
 - `404 Not Found`: order or proposal/code not found.
 - `409 Conflict`: invalid lifecycle transition or modification outside allowed window.

@@ -55,6 +55,9 @@ com.sebet.order_service
   driver/
     controller/
     dto/
+  internal/
+    controller/
+    dto/
   shared/
     enums/
     exception/
@@ -78,6 +81,8 @@ com.sebet.order_service
 - `GlobalExceptionHandler` maps common exceptions to a consistent `ErrorResponse` JSON shape across all REST endpoints.
 - `DriverOrderController` defines the driver-facing endpoint contracts (stubs pending service layer).
 - `DriverIdInterceptor` enforces the `X-Driver-Id` header on `/api/v1/driver/**`.
+- `InternalOrderController` defines the internal service-to-service endpoint contracts (stubs pending service layer).
+- `InternalAuthInterceptor` enforces the `X-Internal-Key` header on `/api/v1/internal/**`.
 
 ## Planned Boundaries
 
@@ -93,6 +98,7 @@ com.sebet.order_service
 | `/api/v1/orders/**` | `UserIdInterceptor` | `X-User-Id` |
 | `/api/v1/store/**` | `StoreIdInterceptor` | `X-Store-Id` |
 | `/api/v1/driver/**` | `DriverIdInterceptor` | `X-Driver-Id` |
+| `/api/v1/internal/**` | `InternalAuthInterceptor` | `X-Internal-Key` |
 
 ## Key Design Rules
 
