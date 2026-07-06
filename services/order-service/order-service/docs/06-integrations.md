@@ -28,13 +28,19 @@ On arrival, order-service should generate a delivery verification code, update s
 
 ## Driver/Delivery App
 
-Planned driver endpoint:
+Driver-facing REST endpoints are defined in `DriverOrderController` under `/api/v1/driver/orders`. All requests require an `X-Driver-Id` header, enforced by `DriverIdInterceptor`.
+
+Implemented endpoint contracts (stubs — service layer pending):
 
 ```text
-POST /api/v1/driver/orders/{orderId}/verify-code
+GET  /api/v1/driver/orders/{orderId}           — delivery detail (snapshot + current status)
+POST /api/v1/driver/orders/{orderId}/pickup    — READY_FOR_PICKUP → OUT_FOR_DELIVERY
+POST /api/v1/driver/orders/{orderId}/arrive    — OUT_FOR_DELIVERY → ARRIVED; generates verification code → C7
+POST /api/v1/driver/orders/{orderId}/complete  — ARRIVED → DELIVERED; validates code from C7
+POST /api/v1/driver/orders/{orderId}/decline   — unassigns driver; valid only before OUT_FOR_DELIVERY
 ```
 
-This endpoint should validate the delivery code and transition the order to `DELIVERED`.
+GPS and ETA updates do not go through this API. The driver app sends coordinates to the tracking service, which publishes a `DriverLocationUpdatedEvent`. Order-service consumes that event, updates Cache 3 (`movementStatus`, `driverLat`, `driverLng`, `etaMinutes`), and pushes a WebSocket message to the customer.
 
 ## Frontend Clients
 
@@ -50,4 +56,4 @@ Store clients use:
 
 ## Integration Status
 
-The contracts are documented in controllers and DTOs. The checkout event consumer and Redis hot-view write-through path are implemented. The delivery-arrival consumer, event publishers, driver endpoints, and WebSocket broker are pending.
+The contracts are documented in controllers and DTOs. The checkout event consumer and Redis hot-view write-through path are implemented. Driver endpoint contracts (`DriverOrderController`) and `DriverIdInterceptor` are implemented; their service layer is pending. The delivery-arrival consumer, event publishers, and WebSocket broker are pending.

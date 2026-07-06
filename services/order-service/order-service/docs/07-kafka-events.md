@@ -6,6 +6,7 @@
 |---|---|---|---|
 | `checkout-events` | `CheckoutConfirmedEvent` | Create order from cart checkout | Consumer, DTO, mapper, Redis lock, DB creation, retry, and DLT handling implemented |
 | `order.arrived` | `OrderArrivedEvent` | Generate delivery verification code and update tracking | Pending |
+| `driver-location-events` | `DriverLocationUpdatedEvent` | Update Cache 3 (movementStatus, driverLat, driverLng, etaMinutes) and push WebSocket tracking update to customer | Pending |
 
 ## Planned Produced Topics
 

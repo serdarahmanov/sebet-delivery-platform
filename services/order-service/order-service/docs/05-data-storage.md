@@ -67,7 +67,7 @@ These scripts close common Redis race windows.
 
 The current durable schema stores:
 
-- `orders`: durable order header, cart id, customer/store ids, status, schedule fields, totals, discounts, delivery address snapshot, coordinates, cancellation fields, and timestamps.
+- `orders`: durable order header, cart id, customer/store ids, status, schedule fields, totals, discounts, delivery address snapshot, coordinates, cancellation fields, driver assignment fields (`driver_id`, `driver_assigned_at`), and timestamps.
 - `order_items`: durable item snapshots with product, quantity, unit, pricing, discount, image URL, and line number.
 - `order_status_history`: append-style status transition records.
 

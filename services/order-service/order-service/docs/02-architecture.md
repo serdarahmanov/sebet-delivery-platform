@@ -52,6 +52,9 @@ com.sebet.order_service
   store/
     controller/
     dto/
+  driver/
+    controller/
+    dto/
   shared/
     enums/
     exception/
@@ -73,6 +76,8 @@ com.sebet.order_service
 - Shared enums avoid duplicate lifecycle values across customer and store DTOs.
 - Interceptors enforce identity headers by endpoint family.
 - `GlobalExceptionHandler` maps common exceptions to a consistent `ErrorResponse` JSON shape across all REST endpoints.
+- `DriverOrderController` defines the driver-facing endpoint contracts (stubs pending service layer).
+- `DriverIdInterceptor` enforces the `X-Driver-Id` header on `/api/v1/driver/**`.
 
 ## Planned Boundaries
 
@@ -87,6 +92,7 @@ com.sebet.order_service
 |---|---|---|
 | `/api/v1/orders/**` | `UserIdInterceptor` | `X-User-Id` |
 | `/api/v1/store/**` | `StoreIdInterceptor` | `X-Store-Id` |
+| `/api/v1/driver/**` | `DriverIdInterceptor` | `X-Driver-Id` |
 
 ## Key Design Rules
 

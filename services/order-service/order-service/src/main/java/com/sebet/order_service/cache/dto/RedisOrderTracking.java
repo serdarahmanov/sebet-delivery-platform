@@ -9,9 +9,10 @@ import lombok.NoArgsConstructor;
 /**
  * Cache 3 — order:tracking:{orderId}
  *
- * Live delivery state pushed by the live-tracking service every few seconds
- * as the driver moves.  Read by the WebSocket server to push updates to the
- * tracking screen: driver pin position, ETA chip countdown, progress steps.
+ * Live delivery state written to Cache 3 from two sources:
+ *   - Driver app  : pushes raw GPS coordinates via PUT /api/v1/driver/orders/{orderId}/location
+ *   - Tracking service : calculates ETA from coordinates and writes it back here
+ * Read by the WebSocket server to push updates to the customer's tracking screen.
  *
  * Kept separate from RedisOrder so frequent GPS writes do not touch the
  * larger static order blob.
@@ -26,8 +27,12 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class RedisOrderTracking {
 
-    /** e.g. "out_for_delivery" */
-    private String status;
+    /**
+     * Driver movement state — more granular than the order lifecycle status in Cache 4.
+     * e.g. "en_route_to_store", "at_store", "en_route_to_customer", "at_customer".
+     * Written by the tracking service via the DriverLocationUpdatedEvent.
+     */
+    private String movementStatus;
     /** Live countdown shown on the map ETA chip. */
     private int etaMinutes;
     private double driverLat;

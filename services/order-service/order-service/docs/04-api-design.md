@@ -57,6 +57,33 @@ Endpoint groups:
 - `POST /api/v1/store/orders/{orderId}/cancel`
 - `POST /api/v1/store/orders/{orderId}/propose-changes`
 
+## Driver API
+
+Base path:
+
+```text
+/api/v1/driver/orders
+```
+
+Required header:
+
+```http
+X-Driver-Id: <driver-id>
+```
+
+Endpoint groups:
+
+- `GET  /api/v1/driver/orders/{orderId}`           — delivery detail (C2 + C4)
+- `POST /api/v1/driver/orders/{orderId}/pickup`    — READY_FOR_PICKUP → OUT_FOR_DELIVERY
+- `POST /api/v1/driver/orders/{orderId}/arrive`    — OUT_FOR_DELIVERY → ARRIVED; generates verification code → C7
+- `POST /api/v1/driver/orders/{orderId}/complete`  — ARRIVED → DELIVERED; validates code from C7
+- `POST /api/v1/driver/orders/{orderId}/decline`   — unassigns driver (status unchanged); valid only before OUT_FOR_DELIVERY
+
+GPS and ETA updates do not go through this API. The driver app sends coordinates
+to the tracking service, which publishes a `DriverLocationUpdatedEvent`. Order-service
+consumes that event, updates Cache 3 (`movementStatus`, `driverLat`, `driverLng`,
+`etaMinutes`), and pushes a WebSocket message to the customer.
+
 ## Current Implementation Status
 
 The controllers define request mappings and DTO contracts, but every endpoint currently throws:

@@ -11,6 +11,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     private final UserIdInterceptor userIdInterceptor;
     private final StoreIdInterceptor storeIdInterceptor;
+    private final DriverIdInterceptor driverIdInterceptor;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -21,5 +22,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // Store-facing endpoints — require X-Store-Id
         registry.addInterceptor(storeIdInterceptor)
                 .addPathPatterns("/api/v1/store/**");
+
+        // Driver-facing endpoints — require X-Driver-Id
+        registry.addInterceptor(driverIdInterceptor)
+                .addPathPatterns("/api/v1/driver/**");
     }
 }
