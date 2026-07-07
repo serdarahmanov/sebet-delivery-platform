@@ -2,6 +2,7 @@ package com.sebet.order_service.shared.exception;
 
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -63,6 +64,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleOrderNotFound(OrderNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("ORDER_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(OrderInvalidTransitionException.class)
+    public ResponseEntity<ErrorResponse> handleOrderInvalidTransition(OrderInvalidTransitionException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("ORDER_INVALID_TRANSITION", ex.getMessage()));
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("ORDER_INVALID_TRANSITION", "Order state changed; retry the operation"));
     }
 
     @ExceptionHandler(UnsupportedOperationException.class)

@@ -2,7 +2,7 @@
 
 ## Error Response Shape
 
-All API errors return a consistent JSON body:
+Controller-handled API errors return a consistent JSON body:
 
 ```json
 {
@@ -12,7 +12,7 @@ All API errors return a consistent JSON body:
 }
 ```
 
-Implemented in `shared/exception/ErrorResponse.java` (Java record).
+Implemented in `shared/exception/ErrorResponse.java` (Java record). MVC interceptor failures are sent with `response.sendError(...)` before controller execution and do not use this JSON body.
 
 ## Global Exception Handler
 
@@ -26,6 +26,9 @@ Implemented in `shared/exception/ErrorResponse.java` (Java record).
 | `HttpMessageNotReadableException` | 400 | `MALFORMED_REQUEST` |
 | `MissingRequestHeaderException` | 400 | `MISSING_HEADER` |
 | `NoResourceFoundException` | 404 | `NOT_FOUND` |
+| `OrderNotFoundException` | 404 | `ORDER_NOT_FOUND` |
+| `OrderInvalidTransitionException` | 409 | `ORDER_INVALID_TRANSITION` |
+| `OptimisticLockingFailureException` | 409 | `ORDER_INVALID_TRANSITION` |
 | `UnsupportedOperationException` | 501 | `NOT_IMPLEMENTED` |
 | `Exception` (fallback) | 500 | `INTERNAL_ERROR` |
 
@@ -34,14 +37,14 @@ Unhandled exceptions are logged at ERROR level before returning `INTERNAL_ERROR`
 ## Status Code Rules
 
 - `400 Bad Request`: invalid request body, failed bean validation, or missing/blank identity header.
-- `404 Not Found`: no handler matched the requested path.
+- `404 Not Found`: no handler matched the requested path, the order does not exist, or order ownership should be hidden.
+- `409 Conflict`: invalid lifecycle transition or stale concurrent lifecycle update.
 - `501 Not Implemented`: endpoint contract exists but business logic is not yet built.
 - `500 Internal Server Error`: unexpected server failure.
 
 Planned (not yet enforced by handler):
 
-- `403 Forbidden`: store does not own the order.
-- `409 Conflict`: invalid lifecycle transition or modification/cancellation cutoff passed.
+- `409 Conflict`: modification/cancellation cutoff passed.
 - `503 Service Unavailable`: downstream/event infrastructure unavailable where retry is appropriate.
 
 ## Input Validation
@@ -56,8 +59,10 @@ Interceptors reject missing or invalid identity headers before reaching the exce
 
 - customer endpoints (`/api/v1/orders/**`): `X-User-Id`
 - store endpoints (`/api/v1/store/**`): `X-Store-Id`
+- driver endpoints (`/api/v1/driver/**`): `X-Driver-Id`
+- internal endpoints (`/api/v1/internal/**`): `X-Internal-Key`
 
-These call `response.sendError(400, ...)` directly and bypass `GlobalExceptionHandler`.
+Customer, store, and driver interceptors call `response.sendError(400, ...)` directly and bypass `GlobalExceptionHandler`. The internal interceptor returns `401` for a missing `X-Internal-Key` and `403` for an invalid key when `order-service.internal.secret` is configured.
 
 ## Design Rule
 

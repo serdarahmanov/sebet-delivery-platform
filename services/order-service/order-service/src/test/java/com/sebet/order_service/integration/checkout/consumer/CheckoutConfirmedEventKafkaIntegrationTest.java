@@ -137,7 +137,10 @@ class CheckoutConfirmedEventKafkaIntegrationTest {
                 .containsExactly(org.assertj.core.groups.Tuple.tuple(null, OrderStatus.PENDING));
 
         assertThat(orderStatusRedisRepository.findById(order.getId().toString()))
-                .hasValue(OrderStatus.PENDING.name());
+                .hasValueSatisfying(entry -> {
+                    assertThat(entry.status()).isEqualTo(OrderStatus.PENDING.name());
+                    assertThat(entry.userId()).isEqualTo("customer-1");
+                });
 
         assertThat(orderTimelineRedisRepository.findAll(order.getId().toString()))
                 .singleElement()

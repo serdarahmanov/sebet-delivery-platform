@@ -51,6 +51,9 @@ Each item stores:
 - line number
 
 `line_number` preserves the cart/receipt item order and is unique per order.
+`product_id` is also unique per order. Checkout is expected to merge duplicate
+products before order creation, and the database enforces that invariant so
+store `OUT_OF_STOCK` rejection details can identify items by product id.
 
 ## Status History
 
@@ -152,6 +155,9 @@ Customer timeline is a simplified view of internal status:
 | Internal status | Customer step |
 |---|---|
 | `PENDING` | `PLACED` |
-| `CONFIRMED`, `READY_FOR_PICKUP` | `PACKED` |
+| `READY_FOR_PICKUP` | `PACKED` |
 | `OUT_FOR_DELIVERY` | `ON_THE_WAY` |
 | `DELIVERED` | `ARRIVED` |
+
+`CONFIRMED` means the store accepted the order and is preparing it. It does not
+advance the customer timeline to `PACKED`.

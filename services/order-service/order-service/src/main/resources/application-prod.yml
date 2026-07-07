@@ -26,6 +26,8 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 order-service:
+  internal:
+    secret: ${ORDER_SERVICE_INTERNAL_SECRET:}
   kafka:
     checkout-events:
       topic: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_TOPIC:checkout-events}

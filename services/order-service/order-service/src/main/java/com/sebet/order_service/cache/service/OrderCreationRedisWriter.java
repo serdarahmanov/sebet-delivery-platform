@@ -176,7 +176,7 @@ public class OrderCreationRedisWriter {
     private String toTimelineStatus(OrderStatus status) {
         return switch (status) {
             case PENDING -> "PLACED";
-            case CONFIRMED, READY_FOR_PICKUP -> "PACKED";
+            case READY_FOR_PICKUP -> "PACKED";
             case OUT_FOR_DELIVERY -> "ON_THE_WAY";
             case DELIVERED -> "ARRIVED";
             default -> null;

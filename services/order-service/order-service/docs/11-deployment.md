@@ -44,6 +44,7 @@ Expected categories:
 - datasource URL/user/password
 - Redis host/port/password
 - optional service instance id for Redis checkout-lock ownership
+- internal API shared secret (`ORDER_SERVICE_INTERNAL_SECRET`) for `X-Internal-Key` validation
 - Kafka bootstrap servers
 - consumed topic names
 - produced topic names

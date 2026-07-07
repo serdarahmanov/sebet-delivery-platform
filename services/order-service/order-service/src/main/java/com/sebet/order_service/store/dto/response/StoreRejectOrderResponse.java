@@ -11,7 +11,7 @@ import com.sebet.order_service.shared.enums.OrderStatus;
  * Returns  : StoreRejectOrderResponse
  *
  * Returns 409 Conflict if the order is not in PENDING status.
- * Returns 403 Forbidden if the storeId on the order does not match X-Store-Id.
+ * Returns 404 Not Found if the order does not exist or does not belong to X-Store-Id.
  */
 public record StoreRejectOrderResponse(
         String orderId,

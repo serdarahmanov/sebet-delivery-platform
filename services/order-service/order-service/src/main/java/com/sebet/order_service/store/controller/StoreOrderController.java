@@ -4,6 +4,7 @@ import com.sebet.order_service.store.dto.request.ProposeOrderChangesRequest;
 import com.sebet.order_service.store.dto.request.RejectOrderRequest;
 import com.sebet.order_service.store.dto.request.StoreCancelOrderRequest;
 import com.sebet.order_service.store.dto.response.*;
+import com.sebet.order_service.store.service.StoreOrderLifecycleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -23,7 +24,8 @@ import java.util.List;
  *
  * Every write endpoint performs an ownership check — the storeId embedded in
  * the order snapshot (Cache 2 / DB) must match the {@code X-Store-Id} header;
- * a mismatch returns 403 Forbidden.
+ * a mismatch returns 404 Not Found, matching the customer API's ownership-hiding
+ * behavior.
  *
  * Endpoint map:
  *
@@ -48,6 +50,8 @@ import java.util.List;
 @RequestMapping("/api/v1/store/orders")
 @RequiredArgsConstructor
 public class StoreOrderController {
+
+    private final StoreOrderLifecycleService storeOrderLifecycleService;
 
     // ── History ──────────────────────────────────────────────────────────────
 
@@ -167,14 +171,14 @@ public class StoreOrderController {
      * Side effects: updates Cache 4 (status).
      *
      * Returns 409 Conflict  if the order is not in PENDING status.
-     * Returns 403 Forbidden if the order does not belong to this store.
+     * Returns 404 Not Found if the order does not belong to this store.
      */
     @PostMapping("/{orderId}/accept")
     public ResponseEntity<StoreAcceptOrderResponse> acceptOrder(
             @RequestHeader("X-Store-Id") String storeId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderLifecycleService.acceptOrder(storeId, orderId));
     }
 
     // ── Reject ───────────────────────────────────────────────────────────────
@@ -193,7 +197,7 @@ public class StoreOrderController {
      * use POST /{orderId}/propose-changes instead.
      *
      * Returns 409 Conflict  if the order is not in PENDING status.
-     * Returns 403 Forbidden if the order does not belong to this store.
+     * Returns 404 Not Found if the order does not belong to this store.
      */
     @PostMapping("/{orderId}/reject")
     public ResponseEntity<StoreRejectOrderResponse> rejectOrder(
@@ -201,7 +205,7 @@ public class StoreOrderController {
             @PathVariable String orderId,
             @RequestBody @Valid RejectOrderRequest request
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderLifecycleService.rejectOrder(storeId, orderId, request));
     }
 
     // ── Ready ────────────────────────────────────────────────────────────────
@@ -214,14 +218,14 @@ public class StoreOrderController {
      *               Should trigger driver-dispatch logic — see Gap 3, not yet implemented.
      *
      * Returns 409 Conflict  if the order is not in CONFIRMED status.
-     * Returns 403 Forbidden if the order does not belong to this store.
+     * Returns 404 Not Found if the order does not belong to this store.
      */
     @PostMapping("/{orderId}/ready")
     public ResponseEntity<StoreReadyOrderResponse> markOrderReady(
             @RequestHeader("X-Store-Id") String storeId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderLifecycleService.markOrderReady(storeId, orderId));
     }
 
     // ── Cancel (post-acceptance) ─────────────────────────────────────────────
@@ -243,7 +247,7 @@ public class StoreOrderController {
      * service layer.
      *
      * Returns 409 Conflict  if the order is not in CONFIRMED or AWAITING_CUSTOMER_RESPONSE status.
-     * Returns 403 Forbidden if the order does not belong to this store.
+     * Returns 404 Not Found if the order does not belong to this store.
      */
     @PostMapping("/{orderId}/cancel")
     public ResponseEntity<StoreCancelOrderResponse> cancelOrder(
@@ -274,7 +278,7 @@ public class StoreOrderController {
      * Items with partial stock must have {@code availableQuantity > 0 && < requestedQuantity}.
      *
      * Returns 409 Conflict  if the order is not in CONFIRMED status.
-     * Returns 403 Forbidden if the order does not belong to this store.
+     * Returns 404 Not Found if the order does not belong to this store.
      */
     @PostMapping("/{orderId}/propose-changes")
     public ResponseEntity<StoreProposeOrderChangesResponse> proposeOrderChanges(

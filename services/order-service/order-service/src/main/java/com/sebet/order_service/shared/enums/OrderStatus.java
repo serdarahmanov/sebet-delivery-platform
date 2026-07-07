@@ -22,7 +22,7 @@ package com.sebet.order_service.shared.enums;
  *
  * ── Customer-facing timeline mapping (Cache 6) ───────────────────────────────
  *   PENDING                           → PLACED
- *   CONFIRMED / READY_FOR_PICKUP      → PACKED
+ *   READY_FOR_PICKUP                  → PACKED
  *   OUT_FOR_DELIVERY                  → ON_THE_WAY
  *   DELIVERED                         → ARRIVED
  */

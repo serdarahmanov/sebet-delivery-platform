@@ -2,9 +2,9 @@
 
 ## Current Tests
 
-The project currently has:
+The project currently has 115 tests covering:
 
-- Redis key generation tests.
+- Redis key generation.
 - MVC interceptor tests for `X-User-Id` and `X-Store-Id`.
 - Spring context test with PostgreSQL, Redis, and Kafka Testcontainers.
 - JPA repository tests against PostgreSQL Testcontainers.
@@ -12,8 +12,12 @@ The project currently has:
 - Checkout event mapper unit tests.
 - Checkout event processor lock unit tests.
 - Checkout Kafka listener and retry/DLT integration tests against real brokers.
-- `CustomerOrderQueryService` unit tests — 34 tests covering all 10 read methods (cache hit, DB fallback, ownership denial, timeline building, orderNumber format, batch item query).
-- `CustomerOrderQueryService` integration tests — 12 tests against real Postgres + Redis containers covering the full read path (history feed, active orders, smart router, DELIVERED/CANCELLED flows, ownership checks, C4 expiry fallback).
+- `CustomerOrderQueryService` unit tests covering all 10 read methods: cache hit, DB fallback, ownership denial, timeline building, order number format, and batch item queries.
+- `CustomerOrderQueryService` integration tests against real Postgres and Redis containers covering the full read path: history feed, active orders, smart router, delivered/cancelled flows, ownership checks, and C4 expiry fallback.
+- `OrderLifecycleService` unit tests for store `accept`, `reject`, and `ready` transitions, invalid transitions, wrong-store ownership hiding, and invalid UUID handling.
+- `OrderLifecycleRedisUpdater` unit tests for status updates, `PACKED` timeline append behavior, duplicate timeline prevention, and cancellation hot-view cleanup.
+- `StoreOrderLifecycleService` unit tests for full `OUT_OF_STOCK` reject validation and rejection metadata persistence.
+- repository tests for optimistic locking and per-order product uniqueness.
 
 The Spring context test uses Testcontainers to start PostgreSQL, Redis, and
 Kafka, then boots the application with the `test` Spring profile.
@@ -24,6 +28,12 @@ Run all tests:
 
 ```powershell
 .\mvnw.cmd test
+```
+
+Run a clean full verification:
+
+```powershell
+.\mvnw.cmd clean test
 ```
 
 On Windows, the `windows-testcontainers` Maven profile is activated
@@ -43,9 +53,7 @@ Compile without running tests:
 .\mvnw.cmd compile
 ```
 
-## Unit Tests To Add
-
-Implemented baseline tests:
+## Implemented Baseline Tests
 
 - Redis key generation
 - required `X-User-Id`
@@ -55,17 +63,27 @@ Implemented baseline tests:
 - checkout event processor Redis lock behavior
 - checkout Kafka listener integration
 - durable order repository behavior
+- optimistic locking and per-order product uniqueness
 - order creation behavior
 - Redis hot-view writes for immediate and scheduled order creation
+- store accept/reject/ready lifecycle transitions
+- `OUT_OF_STOCK` rejection validation against persisted order items
+- invalid lifecycle transition handling
+- lifecycle Redis status/timeline/cancellation updates
+
+## Unit Tests To Add
 
 Add unit tests for:
 
-- status transition rules
-- cancellation rules
+- remaining status transition rules
+- remaining cancellation rules
 - proposal resolution rules
 - Redis repository serialization/deserialization
 - active-order removal Lua behavior
 - lock release Lua behavior
+- store read service mapping when implemented
+- customer write service behavior when implemented
+- driver/internal lifecycle service behavior when implemented
 
 ## Controller Tests To Add
 
@@ -73,7 +91,7 @@ Add controller tests for:
 
 - request validation
 - route mappings
-- planned status codes
+- status code mappings, especially `404`, `409`, and `501`
 
 ## Integration Tests To Add
 
@@ -93,8 +111,9 @@ Implemented integration coverage:
 
 Add integration tests when implemented:
 
-- store-facing read and write service methods
-- order status transition service methods
+- store-facing read methods
+- store-facing lifecycle write methods with real Postgres and Redis
+- remaining order status transition service methods
 - Redis repositories
 - WebSocket/STOMP subscriptions
 

@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -198,6 +199,46 @@ class OrderPersistenceRepositoryTest {
     }
 
     @Test
+    void rejectsStaleOrderUpdateByVersion() {
+        OrderEntity staleOrder = orderRepository.saveAndFlush(newOrder(
+                UUID.randomUUID(),
+                "customer-version",
+                "store-version",
+                OrderStatus.PENDING,
+                OffsetDateTime.parse("2026-07-04T10:00:00Z")
+        ));
+        assertThat(staleOrder.getVersion()).isZero();
+        entityManager.detach(staleOrder);
+
+        OrderEntity freshOrder = orderRepository.findById(staleOrder.getId()).orElseThrow();
+        freshOrder.setStatus(OrderStatus.CONFIRMED);
+        orderRepository.saveAndFlush(freshOrder);
+        assertThat(freshOrder.getVersion()).isEqualTo(1L);
+        entityManager.detach(freshOrder);
+
+        staleOrder.setStatus(OrderStatus.CANCELLED);
+        assertThatThrownBy(() -> orderRepository.saveAndFlush(staleOrder))
+                .isInstanceOf(OptimisticLockingFailureException.class);
+    }
+
+    @Test
+    void rejectsDuplicateProductInSameOrder() {
+        OrderEntity order = orderRepository.saveAndFlush(newOrder(
+                UUID.randomUUID(),
+                "customer-products",
+                "store-products",
+                OrderStatus.PENDING,
+                OffsetDateTime.parse("2026-07-04T10:00:00Z")
+        ));
+
+        orderItemRepository.saveAndFlush(newItem(order.getId(), 1, "product-duplicate"));
+
+        assertThatThrownBy(() -> orderItemRepository.saveAndFlush(
+                newItem(order.getId(), 2, "product-duplicate")
+        )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     void rejectsDuplicateCartId() {
         OrderEntity firstOrder = newOrder(
                 UUID.randomUUID(),
@@ -285,6 +326,22 @@ class OrderPersistenceRepositoryTest {
                 .storeLng(new BigDecimal("69.240500"))
                 .createdAt(createdAt)
                 .updatedAt(createdAt)
+                .build();
+    }
+
+    private OrderItemEntity newItem(UUID orderId, int lineNumber, String productId) {
+        return OrderItemEntity.builder()
+                .orderId(orderId)
+                .lineNumber(lineNumber)
+                .productId(productId)
+                .productName("Apples")
+                .quantity(new BigDecimal("2.000"))
+                .unit(ProductUnit.KG)
+                .unitPriceAmount(new BigDecimal("12000.00"))
+                .grossAmount(new BigDecimal("24000.00"))
+                .discountAmount(BigDecimal.ZERO)
+                .netAmount(new BigDecimal("24000.00"))
+                .createdAt(OffsetDateTime.parse("2026-07-04T10:01:00Z"))
                 .build();
     }
 }

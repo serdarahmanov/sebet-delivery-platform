@@ -4,7 +4,7 @@ This file tracks behavior that is designed in the docs and DTOs but not implemen
 
 ## Service Layer
 
-All controller methods currently throw:
+Many controller methods still throw:
 
 ```text
 UnsupportedOperationException("Not implemented yet")
@@ -14,18 +14,27 @@ Implemented:
 
 - `OrderCreationService` creates durable orders from internal checkout commands.
 - Redis hot-view initialization for created orders from current database state.
-- `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment modelled as `driverId` / `driverAssignedAt` metadata fields on the order (added directly to V1 migration).
-- `CustomerOrderQueryService` — all 10 customer-facing GET methods (history feed, active orders list, active order detail, scheduled detail, cancelled detail, smart router, status, tracking, verification code, proposed changes). Redis-first with DB fallback; ownership verification returns 404 for both not-found and wrong-user (security by obscurity).
+- `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment is modelled as `driverId` / `driverAssignedAt` metadata fields on the order.
+- `CustomerOrderQueryService` implements all 10 customer-facing GET methods: history feed, active orders list, active order detail, scheduled detail, cancelled detail, smart router, status, tracking, verification code, and proposed changes.
+- Customer read ownership verification returns 404 for both not-found and wrong-user responses.
+- `OrderLifecycleService` implements the first store lifecycle transitions:
+  - `PENDING -> CONFIRMED` through `POST /api/v1/store/orders/{orderId}/accept`
+  - `PENDING -> CANCELLED` through `POST /api/v1/store/orders/{orderId}/reject`
+  - `CONFIRMED -> READY_FOR_PICKUP` through `POST /api/v1/store/orders/{orderId}/ready`
+- Store lifecycle writes use `orders.version` optimistic locking so concurrent lifecycle updates cannot both commit.
+- Store `OUT_OF_STOCK` rejection validation verifies that item details are present, belong to the order, match requested quantity/unit, and provide a valid partial-stock quantity when applicable.
+- Store `OUT_OF_STOCK` rejection validation rejects duplicate product ids and null list elements.
+- Store rejection metadata is persisted into `order_status_history.metadata_json`.
+- Redis lifecycle transition updates for C4 status, C6 `PACKED` timeline append, and terminal cancellation hot-view cleanup.
 
 Pending:
 
-- store-facing service methods
-- order status transition service methods (accept, reject, pickup, arrive, complete, cancel, etc.)
-- proposals write path (respond-to-changes)
-- cancellation write path (customer cancel)
-- delivery completion behavior
+- store-facing read methods
+- remaining store write methods: `cancel`, `propose-changes`
+- remaining lifecycle transitions: customer cancel, scheduled activation, proposal resolution, driver pickup, driver arrive, driver complete, and delivery cancellation paths
+- proposals write path (`respond-to-changes`)
 - scheduled order update write path
-- hot-view repair for non-checkout write paths
+- hot-view repair for non-checkout write paths beyond the first store transitions
 
 ## Database
 
@@ -35,6 +44,8 @@ Implemented:
 - JPA repositories
 - Flyway migration `V1__create_order_tables.sql`
 - unique `cart_id` idempotency constraint
+- optimistic lock `orders.version` column
+- unique `(order_id, product_id)` order item constraint
 - repository tests
 
 Pending:
@@ -81,41 +92,39 @@ Pending:
 
 ## Driver Endpoints
 
-Implemented (stubs — service layer pending):
+Implemented contracts only; service layer pending:
 
-- `GET  /{orderId}` — delivery detail
-- `POST /{orderId}/pickup` — READY_FOR_PICKUP → OUT_FOR_DELIVERY
-- `POST /{orderId}/arrive` — OUT_FOR_DELIVERY → ARRIVED; generates verification code → C7
-- `POST /{orderId}/complete` — ARRIVED → DELIVERED; validates C7 code
-- `POST /{orderId}/decline` — unassigns driver; valid before OUT_FOR_DELIVERY
+- `GET  /{orderId}` - delivery detail
+- `POST /{orderId}/pickup` - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY`
+- `POST /{orderId}/arrive` - `OUT_FOR_DELIVERY -> ARRIVED`; generates verification code into C7
+- `POST /{orderId}/complete` - `ARRIVED -> DELIVERED`; validates C7 code
+- `POST /{orderId}/decline` - unassigns driver; valid before `OUT_FOR_DELIVERY`
 
 ## Internal Endpoints
 
-Implemented (stubs — service layer pending):
+Implemented contracts only; service layer pending:
 
-- `POST /{orderId}/assign-driver` — sets driverId + driverAssignedAt (dispatch)
-- `POST /{orderId}/unassign-driver` — clears driverId; valid on any non-terminal status
-- `POST /{orderId}/system-cancel` — system-initiated cancellation
-- `POST /{orderId}/activate-scheduled` — SCHEDULED → PENDING
-- `POST /{orderId}/cancel-proposal` — AWAITING_CUSTOMER_RESPONSE → CANCELLED
+- `POST /{orderId}/assign-driver` - sets `driverId` and `driverAssignedAt`
+- `POST /{orderId}/unassign-driver` - clears `driverId`; valid on any non-terminal status
+- `POST /{orderId}/system-cancel` - system-initiated cancellation
+- `POST /{orderId}/activate-scheduled` - `SCHEDULED -> PENDING`
+- `POST /{orderId}/cancel-proposal` - `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`
 
 ## Error Handling
 
 Implemented:
 
-- `GlobalExceptionHandler` (`@RestControllerAdvice`) mapping common exceptions to consistent HTTP responses
-- `ErrorResponse` record (`shared/exception/`) with `code`, `message`, and `timestamp` fields
-- Input validation for amount fields (`>= 0`) in `CheckoutConfirmedEvent` and `CreateOrderCommand` compact constructors
-- `deliveryAddressJson` JSON parse validation in `OrderCreationService` before DB write
-
-Implemented:
-
-- `ORDER_NOT_FOUND` (404) — raised by `OrderNotFoundException`, used for both not-found and wrong-owner responses.
+- `GlobalExceptionHandler` (`@RestControllerAdvice`) maps common exceptions to consistent HTTP responses.
+- `ErrorResponse` record (`shared/exception/`) with `code`, `message`, and `timestamp` fields.
+- Input validation for amount fields (`>= 0`) in `CheckoutConfirmedEvent` and `CreateOrderCommand` compact constructors.
+- `deliveryAddressJson` JSON parse validation in `OrderCreationService` before DB write.
+- `ORDER_NOT_FOUND` (404), raised by `OrderNotFoundException`, is used for both not-found and wrong-owner responses.
+- `ORDER_INVALID_TRANSITION` (409), raised by `OrderInvalidTransitionException`, is used for invalid lifecycle transitions.
+- `OptimisticLockingFailureException` is mapped to `ORDER_INVALID_TRANSITION` (409) for stale concurrent lifecycle writes.
 
 Pending:
 
 - `ORDER_NOT_CANCELLABLE`, `PROPOSAL_EXPIRED`, and other domain-specific codes as write paths are implemented
-- `409 Conflict` handling once lifecycle transition rules are enforced
 
 ## Deployment
 

@@ -1,5 +1,6 @@
 create table orders (
     id uuid primary key,
+    version bigint not null,
     customer_id varchar(64) not null,
     store_id varchar(64) not null,
     cart_id varchar(64) not null,
@@ -65,6 +66,7 @@ create table order_items (
 );
 
 create unique index idx_order_items_order_line_number on order_items (order_id, line_number);
+create unique index idx_order_items_order_product on order_items (order_id, product_id);
 create index idx_order_items_product on order_items (product_id);
 
 create table order_status_history (

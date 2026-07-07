@@ -23,7 +23,8 @@ import java.util.Set;
  *  - The entire key is deleted atomically when the set becomes empty.
  *  - No TTL — managed entirely through explicit add/remove calls.
  *
- * Statuses tracked: PENDING, CONFIRMED, READY_FOR_PICKUP, OUT_FOR_DELIVERY, ARRIVED.
+ * Statuses tracked: PENDING, CONFIRMED, READY_FOR_PICKUP, OUT_FOR_DELIVERY, ARRIVED,
+ * AWAITING_CUSTOMER_RESPONSE.
  * DELIVERED and CANCELLED are terminal — orders are removed at that point.
  */
 @Repository

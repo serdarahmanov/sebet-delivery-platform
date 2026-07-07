@@ -53,8 +53,7 @@ public record RejectOrderRequest(
          * can actually offer, so the notification service can present the exact delta
          * to the customer without a separate catalogue lookup at notification time.
          */
-        @Valid
-        List<OutOfStockItem> outOfStockItems,
+        List<@NotNull @Valid OutOfStockItem> outOfStockItems,
 
         /**
          * Optional free-text note for the store's own records.

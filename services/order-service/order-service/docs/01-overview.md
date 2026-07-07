@@ -16,7 +16,7 @@ Implemented:
 - Redis DTOs
 - Redis key registry
 - Redis repository classes
-- MVC interceptors for `X-User-Id` and `X-Store-Id`
+- MVC interceptors for `X-User-Id`, `X-Store-Id`, `X-Driver-Id`, and `X-Internal-Key`
 - PostgreSQL order, item, and status-history entities
 - Spring Data JPA repositories
 - Flyway migration for durable order tables
@@ -27,18 +27,22 @@ Implemented:
 - checkout event retry and dead-letter handling
 - Redis lock for checkout order creation
 - Redis hot-view writes during checkout order creation
+- customer read service methods
+- first store lifecycle write endpoints: accept, reject, and ready
 - repository, order creation, and Kafka listener integration tests
-- global exception handler with consistent error response shape
+- global exception handler for controller-handled exceptions
 - input validation for amount fields and delivery address JSON
 
 Pending:
 
-- REST-facing customer and store service methods
+- customer write service methods
+- store read service methods
+- remaining store write service methods
+- driver and internal service methods
 - order event producers
 - delivery-arrival Kafka consumer
 - WebSocket/STOMP broker configuration
 - background jobs
-- driver endpoints
 
 ## Users
 

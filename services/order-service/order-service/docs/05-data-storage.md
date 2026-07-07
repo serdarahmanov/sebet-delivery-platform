@@ -16,6 +16,8 @@ Implemented:
 - JSONB mapping for the delivery address snapshot and status metadata.
 - Unique `orders.cart_id` idempotency constraint.
 - Unique per-order `order_items.line_number` constraint.
+- Unique per-order `order_items.product_id` constraint.
+- Optimistic locking on `orders.version`.
 
 Pending:
 
@@ -67,7 +69,7 @@ These scripts close common Redis race windows.
 
 The current durable schema stores:
 
-- `orders`: durable order header, cart id, customer/store ids, status, schedule fields, totals, discounts, delivery address snapshot, coordinates, cancellation fields, driver assignment fields (`driver_id`, `driver_assigned_at`), and timestamps.
+- `orders`: durable order header, optimistic lock version, cart id, customer/store ids, status, schedule fields, totals, discounts, delivery address snapshot, coordinates, cancellation fields, driver assignment fields (`driver_id`, `driver_assigned_at`), and timestamps.
 - `order_items`: durable item snapshots with product, quantity, unit, pricing, discount, image URL, and line number.
 - `order_status_history`: append-style status transition records.
 
@@ -75,8 +77,10 @@ Important constraints and indexes:
 
 - `orders.id` primary key.
 - `orders.cart_id` unique index for checkout idempotency.
+- `orders.version` optimistic lock column used by JPA lifecycle writes.
 - `order_items.order_id` foreign key to `orders.id` with cascade delete.
 - `order_items(order_id, line_number)` unique index.
+- `order_items(order_id, product_id)` unique index.
 - `order_status_history.order_id` foreign key to `orders.id` with cascade delete.
 - customer/store history indexes on `(customer_id, created_at desc)` and `(store_id, created_at desc)`.
 

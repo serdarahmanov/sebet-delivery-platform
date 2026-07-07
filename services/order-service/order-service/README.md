@@ -4,7 +4,7 @@ Spring Boot order lifecycle microservice for the Sebet delivery platform.
 
 The service is designed to receive checkout confirmations from cart-service, create orders, expose customer and store order APIs, maintain Redis-backed hot order views, and support live tracking through WebSocket/STOMP (planned).
 
-The current codebase contains the API/DTO/cache skeleton, durable order persistence, Flyway schema migration, repository tests, an internal order creation service, checkout-event-to-command mapping, Kafka retry/DLT handling, a Kafka checkout-event consumer, Redis locking around checkout order creation, Redis hot-view writes during order creation, and a global exception handler with consistent error responses. WebSocket broker, REST service implementations, and order event producers are still pending.
+The current codebase contains the API/DTO/cache skeleton, durable order persistence, Flyway schema migration, repository tests, an internal order creation service, checkout-event-to-command mapping, Kafka retry/DLT handling, a Kafka checkout-event consumer, Redis locking around checkout order creation, Redis hot-view writes during order creation, customer read services, the first store lifecycle write endpoints, and a global exception handler with consistent error responses. WebSocket broker, most remaining REST write/read service implementations, and order event producers are still pending.
 
 ## Tech Stack
 
