@@ -171,9 +171,30 @@ The following store endpoints are still pending:
 - `POST /api/v1/store/orders/{orderId}/cancel`
 - `POST /api/v1/store/orders/{orderId}/propose-changes`
 
-### Driver and Internal APIs
+### Driver API - Write Endpoints
 
-Driver and internal controllers define DTO contracts, but their service methods are still pending and throw:
+The following driver lifecycle endpoints are implemented through `DriverOrderLifecycleService` and `OrderLifecycleService`:
+
+| Endpoint | Transition | Status |
+|---|---|---|
+| `POST /api/v1/driver/orders/{orderId}/pickup` | `READY_FOR_PICKUP -> OUT_FOR_DELIVERY` | implemented |
+| `POST /api/v1/driver/orders/{orderId}/arrive` | `OUT_FOR_DELIVERY -> ARRIVED` | implemented |
+| `POST /api/v1/driver/orders/{orderId}/complete` | `ARRIVED -> DELIVERED` | implemented |
+
+Driver ownership is verified on every write: the `driverId` on the order must match `X-Driver-Id`. A mismatch returns `403 DRIVER_NOT_ASSIGNED`. Orders that do not exist return `404 ORDER_NOT_FOUND`. Invalid transitions return `409 ORDER_INVALID_TRANSITION`.
+
+`/arrive` generates a 2-digit zero-padded verification code (`"00"`–`"99"`), writes it to C7 (30-minute TTL), and persists it to `order_status_history.metadata_json` as a permanent fallback.
+
+`/complete` requires the driver to submit the code shown to the customer. The code is validated against C7, falling back to `order_status_history` if C7 has expired. A wrong code returns `400 VALIDATION_ERROR`. A missing code (not in Redis and not in DB) returns `404 VERIFICATION_CODE_NOT_FOUND`.
+
+The following driver endpoints are still pending:
+
+- `GET /api/v1/driver/orders/{orderId}` - delivery detail
+- `POST /api/v1/driver/orders/{orderId}/decline` - unassigns driver
+
+### Internal API
+
+Internal controller defines DTO contracts, but service methods are still pending and throw:
 
 ```text
 UnsupportedOperationException("Not implemented yet")
@@ -197,8 +218,8 @@ Current and planned status code conventions:
 
 - `200 OK`: successful reads and actions with response body.
 - `302 Found`: smart customer order router redirects to status-specific detail endpoints.
-- `400 Bad Request`: missing or invalid required identity header (`X-User-Id`, `X-Store-Id`, `X-Driver-Id`).
+- `400 Bad Request`: missing or invalid required identity header (`X-User-Id`, `X-Store-Id`, `X-Driver-Id`), or submitted verification code does not match stored code.
 - `401 Unauthorized`: missing `X-Internal-Key` header on internal endpoints.
-- `403 Forbidden`: invalid `X-Internal-Key` value.
+- `403 Forbidden`: invalid `X-Internal-Key` value, or `X-Driver-Id` does not match the driver assigned to the order.
 - `404 Not Found`: order/proposal/code not found, or wrong order owner where ownership should be hidden.
 - `409 Conflict`: invalid lifecycle transition or modification outside allowed window.

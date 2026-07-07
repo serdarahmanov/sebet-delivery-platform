@@ -20,7 +20,7 @@ Implemented:
 - Customer active-order list reads skip stale C1 entries whose C2 snapshot belongs to another user.
 - `StoreOrderQueryService` implements all 5 store-facing GET methods: history feed, active orders list, scheduled orders list, order detail, and status.
 - Store read ownership verification returns 404 for both not-found and wrong-store responses.
-- `OrderLifecycleService` implements the first store lifecycle transitions:
+- `OrderLifecycleService` implements store lifecycle transitions:
   - `PENDING -> CONFIRMED` through `POST /api/v1/store/orders/{orderId}/accept`
   - `PENDING -> CANCELLED` through `POST /api/v1/store/orders/{orderId}/reject`
   - `CONFIRMED -> READY_FOR_PICKUP` through `POST /api/v1/store/orders/{orderId}/ready`
@@ -28,15 +28,24 @@ Implemented:
 - Store `OUT_OF_STOCK` rejection validation verifies that item details are present, belong to the order, match requested quantity/unit, and provide a valid partial-stock quantity when applicable.
 - Store `OUT_OF_STOCK` rejection validation rejects duplicate product ids and null list elements.
 - Store rejection metadata is persisted into `order_status_history.metadata_json`.
-- Redis lifecycle transition updates for C4 status, C6 `PACKED` timeline append, and terminal cancellation hot-view cleanup.
+- `OrderLifecycleService` implements driver lifecycle transitions:
+  - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY` through `POST /api/v1/driver/orders/{orderId}/pickup`
+  - `OUT_FOR_DELIVERY -> ARRIVED` through `POST /api/v1/driver/orders/{orderId}/arrive`
+  - `ARRIVED -> DELIVERED` through `POST /api/v1/driver/orders/{orderId}/complete`
+- Driver transitions verify `driverId` ownership, returning `403 DRIVER_NOT_ASSIGNED` on mismatch.
+- `arrive` generates a 2-digit verification code written to C7 (30-min TTL) and persisted to `order_status_history.metadata_json` as a permanent fallback.
+- `complete` validates the submitted code against C7, falling back to `order_status_history` if C7 has expired. Wrong code returns `400`; code not found in either store returns `404 VERIFICATION_CODE_NOT_FOUND`.
+- `delivered_at` is set to the same `changedAt` instant as the history record, preventing split-timestamp inconsistency.
+- Redis lifecycle transition updates extended: C4 status, C6 timeline (`PACKED`, `ON_THE_WAY`, `ARRIVED`, `DELIVERED`), cancellation hot-view cleanup, and delivered hot-view cleanup (C1, C1b, C2, C3, C7 cleared; C4 and C6 retained).
 
 Pending:
 
 - remaining store write methods: `cancel`, `propose-changes`
-- remaining lifecycle transitions: customer cancel, scheduled activation, proposal resolution, driver pickup, driver arrive, driver complete, and delivery cancellation paths
+- remaining lifecycle transitions: customer cancel, scheduled activation, proposal resolution, and delivery cancellation paths
+- driver detail (`GET /{orderId}`) and decline (`POST /{orderId}/decline`) endpoints
 - proposals write path (`respond-to-changes`)
 - scheduled order update write path
-- hot-view repair for non-checkout write paths beyond the first store transitions
+- hot-view repair for non-checkout write paths beyond the implemented store and driver transitions
 
 ## Database
 
@@ -94,12 +103,15 @@ Pending:
 
 ## Driver Endpoints
 
-Implemented contracts only; service layer pending:
+Implemented:
+
+- `POST /{orderId}/pickup` - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY`
+- `POST /{orderId}/arrive` - `OUT_FOR_DELIVERY -> ARRIVED`; generates verification code into C7 and `order_status_history.metadata_json`
+- `POST /{orderId}/complete` - `ARRIVED -> DELIVERED`; validates code from C7 with DB fallback
+
+Pending (contracts defined, service layer missing):
 
 - `GET  /{orderId}` - delivery detail
-- `POST /{orderId}/pickup` - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY`
-- `POST /{orderId}/arrive` - `OUT_FOR_DELIVERY -> ARRIVED`; generates verification code into C7
-- `POST /{orderId}/complete` - `ARRIVED -> DELIVERED`; validates C7 code
 - `POST /{orderId}/decline` - unassigns driver; valid before `OUT_FOR_DELIVERY`
 
 ## Internal Endpoints
@@ -124,6 +136,9 @@ Implemented:
 - `ORDER_NOT_FOUND` (404), raised by `OrderNotFoundException`, is used for both not-found and wrong-owner responses.
 - `ORDER_INVALID_TRANSITION` (409), raised by `OrderInvalidTransitionException`, is used for invalid lifecycle transitions.
 - `OptimisticLockingFailureException` is mapped to `ORDER_INVALID_TRANSITION` (409) for stale concurrent lifecycle writes.
+
+- `DriverNotAssignedException` maps to `403 DRIVER_NOT_ASSIGNED`.
+- `VerificationCodeNotFoundException` maps to `404 VERIFICATION_CODE_NOT_FOUND`.
 
 Pending:
 

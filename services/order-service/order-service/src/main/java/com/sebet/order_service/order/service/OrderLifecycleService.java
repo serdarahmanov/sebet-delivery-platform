@@ -8,6 +8,7 @@ import com.sebet.order_service.persistence.repository.OrderStatusHistoryReposito
 import com.sebet.order_service.shared.enums.OrderCancellationReason;
 import com.sebet.order_service.shared.enums.OrderCancelledBy;
 import com.sebet.order_service.shared.enums.OrderStatus;
+import com.sebet.order_service.shared.exception.DriverNotAssignedException;
 import com.sebet.order_service.shared.exception.OrderInvalidTransitionException;
 import com.sebet.order_service.shared.exception.OrderNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ import java.util.UUID;
 public class OrderLifecycleService {
 
     private static final String ACTOR_STORE = "STORE";
+    private static final String ACTOR_DRIVER = "DRIVER";
 
     private final OrderRepository orderRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
@@ -85,6 +87,81 @@ public class OrderLifecycleService {
                 null,
                 null
         );
+    }
+
+    @Transactional
+    public OrderLifecycleResult driverPickup(String orderId, String driverId) {
+        return transitionDriverOrder(
+                orderId, driverId,
+                OrderStatus.READY_FOR_PICKUP, OrderStatus.OUT_FOR_DELIVERY,
+                "DRIVER_PICKED_UP", null, null
+        );
+    }
+
+    @Transactional
+    public OrderLifecycleResult driverArrive(String orderId, String driverId, String metadataJson) {
+        return transitionDriverOrder(
+                orderId, driverId,
+                OrderStatus.OUT_FOR_DELIVERY, OrderStatus.ARRIVED,
+                "DRIVER_ARRIVED", metadataJson, null
+        );
+    }
+
+    @Transactional
+    public OrderLifecycleResult driverComplete(String orderId, String driverId) {
+        return transitionDriverOrder(
+                orderId, driverId,
+                OrderStatus.ARRIVED, OrderStatus.DELIVERED,
+                "DRIVER_COMPLETED", null, null
+        );
+    }
+
+    private OrderLifecycleResult transitionDriverOrder(
+            String orderId,
+            String driverId,
+            OrderStatus expectedStatus,
+            OrderStatus targetStatus,
+            String reason,
+            String metadataJson,
+            OrderMutation mutation
+    ) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        if (!driverId.equals(order.getDriverId())) {
+            throw new DriverNotAssignedException(orderId);
+        }
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus != expectedStatus) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, targetStatus);
+        }
+
+        OffsetDateTime changedAt = OffsetDateTime.now();
+        order.setStatus(targetStatus);
+        order.setUpdatedAt(changedAt);
+        if (targetStatus == OrderStatus.DELIVERED) {
+            order.setDeliveredAt(changedAt);
+        }
+        if (mutation != null) {
+            mutation.apply(order);
+        }
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(targetStatus)
+                .changedByType(ACTOR_DRIVER)
+                .changedById(driverId)
+                .reason(reason)
+                .metadataJson(metadataJson)
+                .createdAt(changedAt)
+                .build());
+
+        registerRedisUpdate(savedOrder, targetStatus, changedAt);
+        return new OrderLifecycleResult(savedOrder, previousStatus, targetStatus, changedAt);
     }
 
     private OrderLifecycleResult transitionStoreOrder(

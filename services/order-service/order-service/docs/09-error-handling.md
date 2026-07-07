@@ -27,6 +27,8 @@ Implemented in `shared/exception/ErrorResponse.java` (Java record). MVC intercep
 | `MissingRequestHeaderException` | 400 | `MISSING_HEADER` |
 | `NoResourceFoundException` | 404 | `NOT_FOUND` |
 | `OrderNotFoundException` | 404 | `ORDER_NOT_FOUND` |
+| `DriverNotAssignedException` | 403 | `DRIVER_NOT_ASSIGNED` |
+| `VerificationCodeNotFoundException` | 404 | `VERIFICATION_CODE_NOT_FOUND` |
 | `OrderInvalidTransitionException` | 409 | `ORDER_INVALID_TRANSITION` |
 | `OptimisticLockingFailureException` | 409 | `ORDER_INVALID_TRANSITION` |
 | `UnsupportedOperationException` | 501 | `NOT_IMPLEMENTED` |
@@ -36,8 +38,9 @@ Unhandled exceptions are logged at ERROR level before returning `INTERNAL_ERROR`
 
 ## Status Code Rules
 
-- `400 Bad Request`: invalid request body, failed bean validation, or missing/blank identity header.
-- `404 Not Found`: no handler matched the requested path, the order does not exist, or order ownership should be hidden.
+- `400 Bad Request`: invalid request body, failed bean validation, missing/blank identity header, or submitted verification code does not match stored code.
+- `403 Forbidden`: invalid `X-Internal-Key` value, or `X-Driver-Id` does not match the driver assigned to the order.
+- `404 Not Found`: no handler matched the requested path, the order does not exist, order ownership should be hidden, or verification code not found in Redis or DB.
 - `409 Conflict`: invalid lifecycle transition or stale concurrent lifecycle update.
 - `501 Not Implemented`: endpoint contract exists but business logic is not yet built.
 - `500 Internal Server Error`: unexpected server failure.

@@ -7,6 +7,7 @@ import com.sebet.order_service.cache.repository.OrderStatusRedisRepository;
 import com.sebet.order_service.cache.repository.OrderTimelineRedisRepository;
 import com.sebet.order_service.cache.repository.OrderTrackingRedisRepository;
 import com.sebet.order_service.cache.repository.StoreActiveOrdersRedisRepository;
+import com.sebet.order_service.cache.repository.VerificationCodeRedisRepository;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ScheduleType;
@@ -31,6 +32,7 @@ class OrderLifecycleRedisUpdaterTest {
     private final OrderTrackingRedisRepository orderTrackingRedisRepository = mock(OrderTrackingRedisRepository.class);
     private final ActiveOrdersRedisRepository activeOrdersRedisRepository = mock(ActiveOrdersRedisRepository.class);
     private final StoreActiveOrdersRedisRepository storeActiveOrdersRedisRepository = mock(StoreActiveOrdersRedisRepository.class);
+    private final VerificationCodeRedisRepository verificationCodeRedisRepository = mock(VerificationCodeRedisRepository.class);
 
     private final OrderLifecycleRedisUpdater updater = new OrderLifecycleRedisUpdater(
             orderStatusRedisRepository,
@@ -38,7 +40,8 @@ class OrderLifecycleRedisUpdaterTest {
             orderRedisRepository,
             orderTrackingRedisRepository,
             activeOrdersRedisRepository,
-            storeActiveOrdersRedisRepository
+            storeActiveOrdersRedisRepository,
+            verificationCodeRedisRepository
     );
 
     @Test

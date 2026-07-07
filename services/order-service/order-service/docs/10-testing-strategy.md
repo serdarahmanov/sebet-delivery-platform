@@ -2,7 +2,7 @@
 
 ## Current Tests
 
-The project currently has 143 tests covering:
+The project currently has 164 tests covering:
 
 - Redis key generation.
 - MVC interceptor tests for `X-User-Id`, `X-Store-Id`, and `X-Internal-Key`.
@@ -80,7 +80,12 @@ Compile without running tests:
 - customer active-order wrong-owner snapshot filtering
 - `OUT_OF_STOCK` rejection validation against persisted order items
 - invalid lifecycle transition handling
-- lifecycle Redis status/timeline/cancellation updates
+- lifecycle Redis status/timeline/cancellation/delivery updates
+- driver pickup/arrive/complete lifecycle transitions
+- driver ownership verification (`DRIVER_NOT_ASSIGNED`)
+- verification code generation, C7 write, and DB metadata persistence
+- verification code validation against C7 with DB fallback
+- `VerificationCodeNotFoundException` on missing code in both stores
 
 ## Unit Tests To Add
 
@@ -93,7 +98,9 @@ Add unit tests for:
 - active-order removal Lua behavior
 - lock release Lua behavior
 - customer write service behavior when implemented
-- driver/internal lifecycle service behavior when implemented
+- driver detail and decline service behavior when implemented
+- internal lifecycle service behavior when implemented
+- `OrderLifecycleRedisUpdater` for `OUT_FOR_DELIVERY`, `ARRIVED`, and `DELIVERED` transitions
 
 ## Controller Tests To Add
 
@@ -123,6 +130,8 @@ Additional integration tests to add:
 
 - store-facing read methods with real Postgres and Redis
 - store-facing lifecycle write methods with real Postgres and Redis
+- driver lifecycle write methods with real Postgres and Redis (pickup → arrive → complete flow)
+- verification code DB fallback when C7 has expired
 - remaining order status transition service methods
 - Redis repositories
 - WebSocket/STOMP subscriptions

@@ -7,6 +7,7 @@ import com.sebet.order_service.cache.repository.OrderStatusRedisRepository;
 import com.sebet.order_service.cache.repository.OrderTimelineRedisRepository;
 import com.sebet.order_service.cache.repository.OrderTrackingRedisRepository;
 import com.sebet.order_service.cache.repository.StoreActiveOrdersRedisRepository;
+import com.sebet.order_service.cache.repository.VerificationCodeRedisRepository;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class OrderLifecycleRedisUpdater {
     private final OrderTrackingRedisRepository orderTrackingRedisRepository;
     private final ActiveOrdersRedisRepository activeOrdersRedisRepository;
     private final StoreActiveOrdersRedisRepository storeActiveOrdersRedisRepository;
+    private final VerificationCodeRedisRepository verificationCodeRedisRepository;
 
     public void applyTransition(OrderEntity order, OrderStatus newStatus, String changedAt) {
         String orderId = order.getId().toString();
@@ -33,6 +35,17 @@ public class OrderLifecycleRedisUpdater {
             orderTrackingRedisRepository.delete(orderId);
             orderStatusRedisRepository.delete(orderId);
             orderTimelineRedisRepository.delete(orderId);
+            return;
+        }
+
+        if (newStatus == OrderStatus.DELIVERED) {
+            activeOrdersRedisRepository.remove(order.getCustomerId(), orderId);
+            storeActiveOrdersRedisRepository.remove(order.getStoreId(), orderId);
+            orderRedisRepository.delete(orderId);
+            orderTrackingRedisRepository.delete(orderId);
+            verificationCodeRedisRepository.delete(orderId);
+            orderStatusRedisRepository.save(orderId, order.getCustomerId(), order.getStoreId(), newStatus.name());
+            orderTimelineRedisRepository.append(orderId, new OrderTimelineEntry("DELIVERED", changedAt));
             return;
         }
 
@@ -48,6 +61,8 @@ public class OrderLifecycleRedisUpdater {
     private String toTimelineStatus(OrderStatus status) {
         return switch (status) {
             case READY_FOR_PICKUP -> "PACKED";
+            case OUT_FOR_DELIVERY -> "ON_THE_WAY";
+            case ARRIVED -> "ARRIVED";
             default -> null;
         };
     }

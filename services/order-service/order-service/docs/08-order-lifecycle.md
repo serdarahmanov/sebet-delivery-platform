@@ -37,6 +37,37 @@ Redis behavior:
 - `ready` updates C4 and appends `PACKED` to C6 (`order:timeline:{orderId}`) if it is missing
 - `reject` moves the order to `CANCELLED`, removes it from active user/store sets, and deletes hot order/status/tracking/timeline keys
 
+## Implemented Driver Transitions
+
+The driver delivery slice is implemented:
+
+| From status | Action | Result | Endpoint |
+|---|---|---|---|
+| `READY_FOR_PICKUP` | pickup | `OUT_FOR_DELIVERY` | `POST /api/v1/driver/orders/{orderId}/pickup` |
+| `OUT_FOR_DELIVERY` | arrive | `ARRIVED` | `POST /api/v1/driver/orders/{orderId}/arrive` |
+| `ARRIVED` | complete | `DELIVERED` | `POST /api/v1/driver/orders/{orderId}/complete` |
+
+Driver transitions:
+
+- verify the order's `driverId` matches `X-Driver-Id`, returning `403 DRIVER_NOT_ASSIGNED` when it does not
+- validate the current status before changing it
+- update the `orders` row; `complete` sets `delivered_at` to the same instant as `changed_at` for timestamp consistency
+- append an `order_status_history` row with `changed_by_type = DRIVER`; `arrive` persists the verification code in `metadata_json` as a permanent fallback
+- update Redis after the database transaction commits
+
+Redis behavior:
+
+- `pickup` updates C4 and appends `ON_THE_WAY` to C6 if missing
+- `arrive` updates C4, appends `ARRIVED` to C6 if missing, and writes the verification code to C7 (30-minute TTL)
+- `complete` updates C4, appends `DELIVERED` to C6, removes the order from C1 and C1b active sets, and deletes C2, C3, and C7
+
+## Verification Code Flow
+
+1. Driver hits `/arrive` → a 2-digit zero-padded code (`"00"`–`"99"`) is generated and written to C7 with a 30-minute TTL. The same code is also stored in `order_status_history.metadata_json` as a permanent fallback.
+2. Customer reads the code from `GET /api/v1/orders/{orderId}/verification-code` (C7) and shows it to the driver.
+3. Driver submits the code via `POST /api/v1/driver/orders/{orderId}/complete`. The service reads C7 first; if C7 has expired, it falls back to the `order_status_history` record for the `ARRIVED` transition.
+4. Code mismatch → `400 VALIDATION_ERROR`. Code not found in either store → `404 VERIFICATION_CODE_NOT_FOUND`.
+
 `OUT_OF_STOCK` reject validation:
 
 - `outOfStockItems` is required and must be non-empty
@@ -113,13 +144,22 @@ Planned cancellation paths:
 
 ## Customer Timeline
 
-The customer sees four steps:
+The customer sees five steps:
 
 1. `PLACED`
 2. `PACKED`
 3. `ON_THE_WAY`
 4. `ARRIVED`
+5. `DELIVERED`
 
-This timeline is intentionally simpler than the internal order status enum.
-`CONFIRMED` means accepted/preparing and does not map to a customer timeline
-step. `READY_FOR_PICKUP` appends `PACKED`.
+This timeline is intentionally simpler than the internal order status enum. `CONFIRMED` does not map to a customer step. Each step maps to a status transition:
+
+| Timeline step | Appended on transition to |
+|---|---|
+| `PLACED` | Written at order creation |
+| `PACKED` | `READY_FOR_PICKUP` |
+| `ON_THE_WAY` | `OUT_FOR_DELIVERY` |
+| `ARRIVED` | `ARRIVED` |
+| `DELIVERED` | `DELIVERED` |
+
+`PACKED`, `ON_THE_WAY`, and `ARRIVED` are deduplicated before append. `DELIVERED` is appended unconditionally since it is terminal and fires exactly once. On cancellation the entire C6 timeline is deleted.

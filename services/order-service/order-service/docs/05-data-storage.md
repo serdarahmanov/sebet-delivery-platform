@@ -19,9 +19,11 @@ Implemented:
 - Unique per-order `order_items.product_id` constraint.
 - Optimistic locking on `orders.version`.
 
+The delivery verification code (C7) is also persisted to `order_status_history.metadata_json` on the `ARRIVED` history record (`{"code": "07"}`). This serves as a permanent fallback if C7 expires before the driver submits the code.
+
 Pending:
 
-- Durable proposal/refund/verification extensions if those states need long-term storage.
+- Durable proposal/refund extensions if those states need long-term storage.
 
 ## Redis Key Registry
 

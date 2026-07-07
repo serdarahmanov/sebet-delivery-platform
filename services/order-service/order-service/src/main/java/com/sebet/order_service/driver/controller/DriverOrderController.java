@@ -6,6 +6,7 @@ import com.sebet.order_service.driver.dto.response.DriverCompleteDeliveryRespons
 import com.sebet.order_service.driver.dto.response.DriverDeclineResponse;
 import com.sebet.order_service.driver.dto.response.DriverOrderDetailResponse;
 import com.sebet.order_service.driver.dto.response.DriverPickupResponse;
+import com.sebet.order_service.driver.service.DriverOrderLifecycleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -61,6 +62,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class DriverOrderController {
 
+    private final DriverOrderLifecycleService driverOrderLifecycleService;
+
     // ── Detail ───────────────────────────────────────────────────────────────
 
     /**
@@ -95,7 +98,7 @@ public class DriverOrderController {
      *   - Order status must be READY_FOR_PICKUP.
      *   - {@code driverId} on the order must match {@code X-Driver-Id}.
      *
-     * Returns 403 Conflict if the order is not assigned to this driver.
+     * Returns 403 Forbidden if the order is not assigned to this driver.
      * Returns 409 Conflict if the order is not in READY_FOR_PICKUP status.
      */
     @PostMapping("/{orderId}/pickup")
@@ -103,7 +106,7 @@ public class DriverOrderController {
             @RequestHeader("X-Driver-Id") String driverId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(driverOrderLifecycleService.confirmPickup(driverId, orderId));
     }
 
     // ── Arrive ───────────────────────────────────────────────────────────────
@@ -133,7 +136,7 @@ public class DriverOrderController {
             @RequestHeader("X-Driver-Id") String driverId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(driverOrderLifecycleService.markArrived(driverId, orderId));
     }
 
     // ── Complete ─────────────────────────────────────────────────────────────
@@ -166,7 +169,7 @@ public class DriverOrderController {
             @PathVariable String orderId,
             @RequestBody @Valid DriverCompleteDeliveryRequest request
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(driverOrderLifecycleService.completeDelivery(driverId, orderId, request.verificationCode()));
     }
 
     // ── Decline ──────────────────────────────────────────────────────────────

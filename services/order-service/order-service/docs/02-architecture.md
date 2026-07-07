@@ -65,7 +65,7 @@ com.sebet.order_service
 
 ## Implemented Boundaries
 
-- Controllers define endpoint contracts. Customer read endpoints, store read endpoints, and the first store lifecycle write endpoints are implemented; remaining customer writes, remaining store writes, driver methods, and internal methods still throw `UnsupportedOperationException`.
+- Controllers define endpoint contracts. Customer read endpoints, store read endpoints, first store lifecycle write endpoints (accept, reject, ready), and driver lifecycle write endpoints (pickup, arrive, complete) are implemented; remaining customer writes, remaining store writes, driver detail and decline, and all internal methods still throw `UnsupportedOperationException`.
 - `OrderCreationService` creates durable orders, order items, and initial status history from an internal command.
 - Checkout integration DTOs model the cart-service checkout event.
 - `CheckoutConfirmedEventMapper` translates checkout events into order creation commands.
@@ -79,7 +79,7 @@ com.sebet.order_service
 - Shared enums avoid duplicate lifecycle values across customer and store DTOs.
 - Interceptors enforce identity headers by endpoint family.
 - `GlobalExceptionHandler` maps common controller-handled exceptions to a consistent `ErrorResponse` JSON shape. Interceptor failures are sent directly with `sendError`.
-- `DriverOrderController` defines the driver-facing endpoint contracts (stubs pending service layer).
+- `DriverOrderController` and `DriverOrderLifecycleService` implement the driver lifecycle write path (pickup, arrive, complete). Detail and decline endpoints remain stubs.
 - `DriverIdInterceptor` enforces the `X-Driver-Id` header on `/api/v1/driver/**`.
 - `InternalOrderController` defines the internal service-to-service endpoint contracts (stubs pending service layer).
 - `InternalAuthInterceptor` enforces the `X-Internal-Key` header on `/api/v1/internal/**`.

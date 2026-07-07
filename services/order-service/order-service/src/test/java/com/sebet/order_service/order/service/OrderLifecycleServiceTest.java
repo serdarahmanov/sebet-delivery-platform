@@ -9,6 +9,7 @@ import com.sebet.order_service.shared.enums.OrderCancellationReason;
 import com.sebet.order_service.shared.enums.OrderCancelledBy;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ScheduleType;
+import com.sebet.order_service.shared.exception.DriverNotAssignedException;
 import com.sebet.order_service.shared.exception.OrderInvalidTransitionException;
 import com.sebet.order_service.shared.exception.OrderNotFoundException;
 import org.junit.jupiter.api.Test;
@@ -173,12 +174,143 @@ class OrderLifecycleServiceTest {
         verify(orderRepository, never()).findByIdAndStoreId(any(), any());
     }
 
+    // ── driver transitions ───────────────────────────────────────────────────
+
+    @Test
+    void driverPickup_movesReadyForPickupOrderToOutForDelivery() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.READY_FOR_PICKUP, "driver-1");
+        when(orderRepository.findById(id)).thenReturn(Optional.of(order));
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+
+        OrderLifecycleResult result = service.driverPickup(id.toString(), "driver-1");
+
+        assertThat(result.previousStatus()).isEqualTo(OrderStatus.READY_FOR_PICKUP);
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.OUT_FOR_DELIVERY);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.OUT_FOR_DELIVERY);
+
+        ArgumentCaptor<OrderStatusHistoryEntity> historyCaptor =
+                ArgumentCaptor.forClass(OrderStatusHistoryEntity.class);
+        verify(orderStatusHistoryRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getChangedByType()).isEqualTo("DRIVER");
+        assertThat(historyCaptor.getValue().getChangedById()).isEqualTo("driver-1");
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo("DRIVER_PICKED_UP");
+        assertThat(historyCaptor.getValue().getMetadataJson()).isNull();
+
+        verify(orderLifecycleRedisUpdater).applyTransition(
+                order, OrderStatus.OUT_FOR_DELIVERY, result.changedAt().toString());
+    }
+
+    @Test
+    void driverArrive_movesOutForDeliveryOrderToArrivedAndPersistsMetadata() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.OUT_FOR_DELIVERY, "driver-1");
+        when(orderRepository.findById(id)).thenReturn(Optional.of(order));
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+
+        OrderLifecycleResult result = service.driverArrive(id.toString(), "driver-1", "{\"code\":\"07\"}");
+
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.ARRIVED);
+
+        ArgumentCaptor<OrderStatusHistoryEntity> historyCaptor =
+                ArgumentCaptor.forClass(OrderStatusHistoryEntity.class);
+        verify(orderStatusHistoryRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getMetadataJson()).isEqualTo("{\"code\":\"07\"}");
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo("DRIVER_ARRIVED");
+    }
+
+    @Test
+    void driverComplete_movesArrivedOrderToDeliveredAndSetsDeliveredAt() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.ARRIVED, "driver-1");
+        when(orderRepository.findById(id)).thenReturn(Optional.of(order));
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+
+        OrderLifecycleResult result = service.driverComplete(id.toString(), "driver-1");
+
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.DELIVERED);
+        assertThat(order.getDeliveredAt()).isNotNull();
+        assertThat(order.getDeliveredAt()).isEqualTo(result.changedAt());
+
+        ArgumentCaptor<OrderStatusHistoryEntity> historyCaptor =
+                ArgumentCaptor.forClass(OrderStatusHistoryEntity.class);
+        verify(orderStatusHistoryRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo("DRIVER_COMPLETED");
+        assertThat(historyCaptor.getValue().getCreatedAt()).isEqualTo(result.changedAt());
+
+        verify(orderLifecycleRedisUpdater).applyTransition(
+                order, OrderStatus.DELIVERED, result.changedAt().toString());
+    }
+
+    @Test
+    void driverPickup_throwsDriverNotAssignedWhenDriverDoesNotMatch() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findById(id))
+                .thenReturn(Optional.of(order(id, OrderStatus.READY_FOR_PICKUP, "other-driver")));
+
+        assertThatThrownBy(() -> service.driverPickup(id.toString(), "driver-1"))
+                .isInstanceOf(DriverNotAssignedException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderStatusHistoryRepository, never()).save(any());
+        verify(orderLifecycleRedisUpdater, never()).applyTransition(any(), any(), any());
+    }
+
+    @Test
+    void driverPickup_throwsDriverNotAssignedWhenOrderHasNoDriverAssigned() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findById(id))
+                .thenReturn(Optional.of(order(id, OrderStatus.READY_FOR_PICKUP, null)));
+
+        assertThatThrownBy(() -> service.driverPickup(id.toString(), "driver-1"))
+                .isInstanceOf(DriverNotAssignedException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void driverPickup_throwsInvalidTransitionWhenNotReadyForPickup() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findById(id))
+                .thenReturn(Optional.of(order(id, OrderStatus.CONFIRMED, "driver-1")));
+
+        assertThatThrownBy(() -> service.driverPickup(id.toString(), "driver-1"))
+                .isInstanceOf(OrderInvalidTransitionException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderLifecycleRedisUpdater, never()).applyTransition(any(), any(), any());
+    }
+
+    @Test
+    void driverPickup_throwsNotFoundWhenOrderDoesNotExist() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.driverPickup(id.toString(), "driver-1"))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void driverPickup_throwsNotFoundForInvalidOrderId() {
+        assertThatThrownBy(() -> service.driverPickup("not-a-uuid", "driver-1"))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderRepository, never()).findById(any());
+    }
+
     private OrderEntity order(UUID id, OrderStatus status) {
+        return order(id, status, null);
+    }
+
+    private OrderEntity order(UUID id, OrderStatus status, String driverId) {
         OffsetDateTime now = OffsetDateTime.now();
         return OrderEntity.builder()
                 .id(id)
                 .customerId("customer-1")
                 .storeId("store-1")
+                .driverId(driverId)
                 .cartId("cart-1")
                 .status(status)
                 .scheduleType(ScheduleType.IMMEDIATE)

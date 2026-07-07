@@ -66,6 +66,18 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("ORDER_NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(DriverNotAssignedException.class)
+    public ResponseEntity<ErrorResponse> handleDriverNotAssigned(DriverNotAssignedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("DRIVER_NOT_ASSIGNED", ex.getMessage()));
+    }
+
+    @ExceptionHandler(VerificationCodeNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleVerificationCodeNotFound(VerificationCodeNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("VERIFICATION_CODE_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(OrderInvalidTransitionException.class)
     public ResponseEntity<ErrorResponse> handleOrderInvalidTransition(OrderInvalidTransitionException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)

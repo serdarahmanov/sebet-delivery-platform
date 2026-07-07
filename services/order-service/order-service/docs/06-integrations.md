@@ -18,25 +18,36 @@ Order-service consumes this event, guards order creation with `order:lock:{cartI
 
 ## Delivery Service
 
-Planned inbound delivery integration:
+The driver arrival flow is now handled via the driver REST API (`POST /arrive`), not a Kafka consumer. When the driver marks arrival:
+
+- Status transitions `OUT_FOR_DELIVERY → ARRIVED`
+- A 2-digit verification code is generated, written to C7, and persisted to `order_status_history.metadata_json`
+- The customer reads the code from `GET /api/v1/orders/{orderId}/verification-code`
+
+A planned inbound Kafka integration remains for cases where arrival is detected externally:
 
 ```text
 order.arrived
 ```
 
-On arrival, order-service should generate a delivery verification code, update status/timeline, write C7, and push live updates to the customer.
+This consumer would replicate the same arrive logic when triggered by a delivery tracking service rather than the driver app.
 
 ## Driver/Delivery App
 
 Driver-facing REST endpoints are defined in `DriverOrderController` under `/api/v1/driver/orders`. All requests require an `X-Driver-Id` header, enforced by `DriverIdInterceptor`.
 
-Implemented endpoint contracts (stubs — service layer pending):
+Implemented:
+
+```text
+POST /api/v1/driver/orders/{orderId}/pickup    — READY_FOR_PICKUP → OUT_FOR_DELIVERY
+POST /api/v1/driver/orders/{orderId}/arrive    — OUT_FOR_DELIVERY → ARRIVED; generates verification code → C7 + DB
+POST /api/v1/driver/orders/{orderId}/complete  — ARRIVED → DELIVERED; validates code from C7 with DB fallback
+```
+
+Pending (contract defined, service layer missing):
 
 ```text
 GET  /api/v1/driver/orders/{orderId}           — delivery detail (snapshot + current status)
-POST /api/v1/driver/orders/{orderId}/pickup    — READY_FOR_PICKUP → OUT_FOR_DELIVERY
-POST /api/v1/driver/orders/{orderId}/arrive    — OUT_FOR_DELIVERY → ARRIVED; generates verification code → C7
-POST /api/v1/driver/orders/{orderId}/complete  — ARRIVED → DELIVERED; validates code from C7
 POST /api/v1/driver/orders/{orderId}/decline   — unassigns driver; valid only before OUT_FOR_DELIVERY
 ```
 
@@ -79,4 +90,4 @@ Store clients use:
 
 ## Integration Status
 
-The contracts are documented in controllers and DTOs. The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, and `ready` actions are implemented through the shared lifecycle service. Driver endpoint contracts (`DriverOrderController`) and `DriverIdInterceptor` are implemented. Internal endpoint contracts (`InternalOrderController`) and `InternalAuthInterceptor` are implemented. The remaining store write methods, all driver service methods, and all internal service methods are pending. The delivery-arrival consumer, event publishers, and WebSocket broker are pending.
+The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, and `ready` actions are implemented through the shared lifecycle service. Driver lifecycle write actions (`pickup`, `arrive`, `complete`) are implemented through `DriverOrderLifecycleService`. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. The remaining store write methods, driver detail and decline, and all internal service methods are pending. The delivery-arrival Kafka consumer, order event publishers, and WebSocket broker are pending.

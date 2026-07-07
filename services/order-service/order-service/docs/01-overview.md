@@ -30,6 +30,7 @@ Implemented:
 - customer read service methods
 - store read service methods
 - first store lifecycle write endpoints: accept, reject, and ready
+- driver lifecycle write endpoints: pickup, arrive, and complete
 - repository, order creation, and Kafka listener integration tests
 - global exception handler for controller-handled exceptions
 - input validation for amount fields and delivery address JSON
@@ -38,7 +39,8 @@ Pending:
 
 - customer write service methods
 - remaining store write service methods
-- driver and internal service methods
+- driver detail and decline service methods
+- internal service methods
 - order event producers
 - delivery-arrival Kafka consumer
 - WebSocket/STOMP broker configuration
