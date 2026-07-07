@@ -40,7 +40,7 @@ Key patterns:
 | C1c | `store:scheduled_orders:{storeId}` | ZSET | Scheduled orders per store |
 | C2 | `order:{orderId}` | STRING/JSON | Static order snapshot |
 | C3 | `order:tracking:{orderId}` | STRING/JSON | Live tracking state |
-| C4 | `order:status:{orderId}` | STRING | Current status and owner userId (`"STATUS\|userId"`) |
+| C4 | `order:status:{orderId}` | STRING | Current status and owner customer/store ids (`"STATUS\|userId\|storeId"`) |
 | C5 | `order:lock:{cartId}` | STRING | Order creation lock |
 | C6 | `order:timeline:{orderId}` | LIST/JSON | Customer timeline |
 | C7 | `order:verification:{orderId}` | STRING/JSON | Delivery verification code |
@@ -49,8 +49,9 @@ Key patterns:
 ## Redis Rules
 
 - C2 static order snapshot has a 48-hour TTL.
+- C1b store active-order membership and C1c store scheduled-order membership have a 48-hour TTL refreshed on add.
 - C3 tracking data is intended to be short-lived live state.
-- C4 stores `"STATUS|userId"` so status reads and ownership verification are a single round-trip, with no C2 lookup needed for the status endpoint.
+- C4 stores `"STATUS|userId|storeId"` so customer and store status reads can verify ownership in a single round-trip, with no C2 lookup needed for the status endpoint.
 - C5 lock uses `SET NX EX` with a 30-second TTL.
 - C6 timeline is append-only customer-facing progress.
 - C7 verification code is short-lived and generated near delivery arrival.
@@ -98,6 +99,9 @@ New checkout orders now populate the hot-view keys after the database transactio
 - `user:active_orders:{userId}` for immediate orders
 - `store:active_orders:{storeId}` for immediate orders
 - `store:scheduled_orders:{storeId}` for scheduled orders
+
+Store read paths fall back to PostgreSQL if store membership keys point to
+missing or unusable per-order cache data.
 
 JPA Open Session in View is disabled. Service methods should load and map all
 data needed by REST responses inside explicit transactional boundaries.

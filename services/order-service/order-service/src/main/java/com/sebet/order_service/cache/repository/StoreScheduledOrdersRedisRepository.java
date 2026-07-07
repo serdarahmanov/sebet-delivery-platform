@@ -6,6 +6,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Repository;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Set;
@@ -27,13 +28,15 @@ import java.util.Set;
  *   - Removed when the order is transitioned to PENDING (30 min before window)
  *     and added to Cache 1b (store active orders).
  *   - Removed if the scheduled order is cancelled before it becomes active.
- *   - No TTL — managed entirely through explicit add/remove calls.
- *     Orders that are never transitioned (edge-case data loss) are harmless
- *     because the score-based query always checks real scheduled times.
+ *   - TTL is 48 hours, refreshed on add, aligned with order snapshot/status keys.
+ *     Store read paths still fall back to PostgreSQL if membership and
+ *     per-order cache keys drift.
  */
 @Repository
 @RequiredArgsConstructor
 public class StoreScheduledOrdersRedisRepository {
+
+    static final Duration TTL = Duration.ofHours(48);
 
     private final StringRedisTemplate redisTemplate;
 
@@ -47,11 +50,13 @@ public class StoreScheduledOrdersRedisRepository {
      * @param scheduledFor the requested delivery time
      */
     public void add(String storeId, String orderId, Instant scheduledFor) {
+        String key = RedisKeys.storeScheduledOrders(storeId);
         redisTemplate.opsForZSet().add(
-                RedisKeys.storeScheduledOrders(storeId),
+                key,
                 orderId,
                 scheduledFor.toEpochMilli()
         );
+        redisTemplate.expire(key, TTL);
     }
 
     /**

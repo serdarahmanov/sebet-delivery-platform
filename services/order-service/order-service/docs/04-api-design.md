@@ -136,7 +136,19 @@ The following customer write endpoints still throw `UnsupportedOperationExceptio
 - `POST /api/v1/orders/{orderId}/respond-to-changes` - respond to store proposal
 - `POST /api/v1/orders/{orderId}/cancel` - cancel order
 
-### Store API - Write Endpoints
+### Store API - Read Endpoints
+
+The following store read endpoints are implemented in `StoreOrderQueryService`:
+
+| Endpoint | Source | Status |
+|---|---|---|
+| `GET /api/v1/store/orders` | DB | implemented |
+| `GET /api/v1/store/orders/active` | C1b -> C2 + C4, DB fallback | implemented |
+| `GET /api/v1/store/orders/scheduled` | C1c -> C2, DB fallback | implemented |
+| `GET /api/v1/store/orders/{orderId}` | DB + status history, C8 proposal merge | implemented |
+| `GET /api/v1/store/orders/{orderId}/status` | C4 ownership/status read, DB fallback | implemented |
+
+Store read ownership checks return `404 ORDER_NOT_FOUND` for both missing orders and wrong-store orders.
 
 The following store write endpoints are implemented through `StoreOrderLifecycleService` and `OrderLifecycleService`:
 
@@ -151,11 +163,6 @@ Orders that do not exist or do not belong to the calling store return `404 ORDER
 
 The following store endpoints are still pending:
 
-- `GET /api/v1/store/orders`
-- `GET /api/v1/store/orders/active`
-- `GET /api/v1/store/orders/scheduled`
-- `GET /api/v1/store/orders/{orderId}`
-- `GET /api/v1/store/orders/{orderId}/status`
 - `POST /api/v1/store/orders/{orderId}/cancel`
 - `POST /api/v1/store/orders/{orderId}/propose-changes`
 

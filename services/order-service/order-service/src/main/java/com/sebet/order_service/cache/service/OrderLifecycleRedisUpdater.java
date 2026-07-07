@@ -36,7 +36,7 @@ public class OrderLifecycleRedisUpdater {
             return;
         }
 
-        orderStatusRedisRepository.save(orderId, order.getCustomerId(), newStatus.name());
+        orderStatusRedisRepository.save(orderId, order.getCustomerId(), order.getStoreId(), newStatus.name());
 
         String timelineStatus = toTimelineStatus(newStatus);
         if (timelineStatus != null && orderTimelineRedisRepository.findAll(orderId).stream()

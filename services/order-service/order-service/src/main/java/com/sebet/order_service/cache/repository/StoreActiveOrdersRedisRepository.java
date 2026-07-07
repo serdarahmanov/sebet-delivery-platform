@@ -6,6 +6,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Repository;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Set;
 
@@ -21,7 +22,7 @@ import java.util.Set;
  *  - A single orderId is removed when its order reaches a terminal state
  *    (DELIVERED, CANCELLED) — must be called alongside the user-side remove.
  *  - The entire key is deleted atomically when the set becomes empty.
- *  - No TTL — managed entirely through explicit add/remove calls.
+ *  - TTL is 48 hours, refreshed on add, aligned with order snapshot/status keys.
  *
  * Statuses tracked: PENDING, CONFIRMED, READY_FOR_PICKUP, OUT_FOR_DELIVERY, ARRIVED,
  * AWAITING_CUSTOMER_RESPONSE.
@@ -30,6 +31,8 @@ import java.util.Set;
 @Repository
 @RequiredArgsConstructor
 public class StoreActiveOrdersRedisRepository {
+
+    static final Duration TTL = Duration.ofHours(48);
 
     private final StringRedisTemplate redisTemplate;
 
@@ -45,7 +48,9 @@ public class StoreActiveOrdersRedisRepository {
      * Creates the key if it does not yet exist (Redis SADD semantics).
      */
     public void add(String storeId, String orderId) {
-        redisTemplate.opsForSet().add(RedisKeys.storeActiveOrders(storeId), orderId);
+        String key = RedisKeys.storeActiveOrders(storeId);
+        redisTemplate.opsForSet().add(key, orderId);
+        redisTemplate.expire(key, TTL);
     }
 
     /**

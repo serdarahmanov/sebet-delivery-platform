@@ -5,6 +5,7 @@ import com.sebet.order_service.store.dto.request.RejectOrderRequest;
 import com.sebet.order_service.store.dto.request.StoreCancelOrderRequest;
 import com.sebet.order_service.store.dto.response.*;
 import com.sebet.order_service.store.service.StoreOrderLifecycleService;
+import com.sebet.order_service.store.service.StoreOrderQueryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -52,6 +53,7 @@ import java.util.List;
 public class StoreOrderController {
 
     private final StoreOrderLifecycleService storeOrderLifecycleService;
+    private final StoreOrderQueryService storeOrderQueryService;
 
     // ── History ──────────────────────────────────────────────────────────────
 
@@ -70,7 +72,7 @@ public class StoreOrderController {
             @RequestHeader("X-Store-Id") String storeId,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderQueryService.getOrderHistory(storeId, pageable));
     }
 
     // ── Active ───────────────────────────────────────────────────────────────
@@ -93,7 +95,7 @@ public class StoreOrderController {
     public ResponseEntity<List<StoreActiveOrderItemResponse>> getActiveOrders(
             @RequestHeader("X-Store-Id") String storeId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderQueryService.getActiveOrders(storeId));
     }
 
     // ── Scheduled ────────────────────────────────────────────────────────────
@@ -116,7 +118,7 @@ public class StoreOrderController {
     public ResponseEntity<List<StoreScheduledOrderItemResponse>> getScheduledOrders(
             @RequestHeader("X-Store-Id") String storeId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderQueryService.getScheduledOrders(storeId));
     }
 
     // ── Detail ───────────────────────────────────────────────────────────────
@@ -125,12 +127,12 @@ public class StoreOrderController {
      * Full order detail — works for any order status.
      *
      * Source strategy:
-     *   Active / awaiting-response orders → Cache 2 + Cache 4 + Cache 6
-     *   Delivered / cancelled orders      → DB
+     *   Order detail and timeline → DB
+     *   Pending proposal          → Cache 8 when status is AWAITING_CUSTOMER_RESPONSE
      *
      * Returns 404 if the order does not exist or does not belong to this store.
      *
-     * Source   : Cache 2 + Cache 4 + Cache 6 | DB
+     * Source   : DB + Cache 8 when applicable
      * Returns  : StoreOrderDetailResponse
      */
     @GetMapping("/{orderId}")
@@ -138,20 +140,20 @@ public class StoreOrderController {
             @RequestHeader("X-Store-Id") String storeId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderQueryService.getOrderDetail(storeId, orderId));
     }
 
     // ── Status ───────────────────────────────────────────────────────────────
 
     /**
-     * Lightweight status poll — cheap Cache 4 read.
+     * Lightweight status poll — Cache 4 status/ownership read with DB fallback.
      *
      * Use for kitchen display screens that only need the current status string
      * without loading the full order payload.
      *
      * Returns 404 if the order does not exist or does not belong to this store.
      *
-     * Source   : Cache 4
+     * Source   : Cache 4 | DB
      * Returns  : StoreOrderStatusResponse
      */
     @GetMapping("/{orderId}/status")
@@ -159,7 +161,7 @@ public class StoreOrderController {
             @RequestHeader("X-Store-Id") String storeId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderQueryService.getOrderStatus(storeId, orderId));
     }
 
     // ── Accept ───────────────────────────────────────────────────────────────

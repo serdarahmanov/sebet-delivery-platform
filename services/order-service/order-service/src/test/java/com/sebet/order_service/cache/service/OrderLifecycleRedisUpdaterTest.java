@@ -47,7 +47,7 @@ class OrderLifecycleRedisUpdaterTest {
 
         updater.applyTransition(order, OrderStatus.CONFIRMED, "2026-07-07T10:00:00Z");
 
-        verify(orderStatusRedisRepository).save(order.getId().toString(), "customer-1", "CONFIRMED");
+        verify(orderStatusRedisRepository).save(order.getId().toString(), "customer-1", "store-1", "CONFIRMED");
         verify(orderTimelineRedisRepository, never()).append(any(), any());
         verify(orderRedisRepository, never()).delete(any());
     }
@@ -61,7 +61,7 @@ class OrderLifecycleRedisUpdaterTest {
 
         updater.applyTransition(order, OrderStatus.READY_FOR_PICKUP, "2026-07-07T10:00:00Z");
 
-        verify(orderStatusRedisRepository).save(order.getId().toString(), "customer-1", "READY_FOR_PICKUP");
+        verify(orderStatusRedisRepository).save(order.getId().toString(), "customer-1", "store-1", "READY_FOR_PICKUP");
         verify(orderTimelineRedisRepository).append(
                 order.getId().toString(),
                 new OrderTimelineEntry("PACKED", "2026-07-07T10:00:00Z")

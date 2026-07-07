@@ -17,6 +17,8 @@ Implemented:
 - `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment is modelled as `driverId` / `driverAssignedAt` metadata fields on the order.
 - `CustomerOrderQueryService` implements all 10 customer-facing GET methods: history feed, active orders list, active order detail, scheduled detail, cancelled detail, smart router, status, tracking, verification code, and proposed changes.
 - Customer read ownership verification returns 404 for both not-found and wrong-user responses.
+- `StoreOrderQueryService` implements all 5 store-facing GET methods: history feed, active orders list, scheduled orders list, order detail, and status.
+- Store read ownership verification returns 404 for both not-found and wrong-store responses.
 - `OrderLifecycleService` implements the first store lifecycle transitions:
   - `PENDING -> CONFIRMED` through `POST /api/v1/store/orders/{orderId}/accept`
   - `PENDING -> CANCELLED` through `POST /api/v1/store/orders/{orderId}/reject`
@@ -29,7 +31,6 @@ Implemented:
 
 Pending:
 
-- store-facing read methods
 - remaining store write methods: `cancel`, `propose-changes`
 - remaining lifecycle transitions: customer cancel, scheduled activation, proposal resolution, driver pickup, driver arrive, driver complete, and delivery cancellation paths
 - proposals write path (`respond-to-changes`)

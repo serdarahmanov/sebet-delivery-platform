@@ -25,12 +25,19 @@ public interface OrderRepository extends JpaRepository<OrderEntity, UUID> {
 
     Page<OrderEntity> findByStoreIdOrderByCreatedAtDesc(String storeId, Pageable pageable);
 
+    Page<OrderEntity> findByStoreIdAndStatusIn(String storeId, Collection<OrderStatus> statuses, Pageable pageable);
+
     List<OrderEntity> findByCustomerIdAndStatusInOrderByCreatedAtDesc(
             String customerId,
             Collection<OrderStatus> statuses
     );
 
     List<OrderEntity> findByStoreIdAndStatusInOrderByCreatedAtDesc(
+            String storeId,
+            Collection<OrderStatus> statuses
+    );
+
+    List<OrderEntity> findByStoreIdAndStatusInOrderByScheduledForAsc(
             String storeId,
             Collection<OrderStatus> statuses
     );

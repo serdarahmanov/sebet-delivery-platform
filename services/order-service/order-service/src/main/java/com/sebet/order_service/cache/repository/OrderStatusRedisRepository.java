@@ -9,10 +9,11 @@ import java.time.Duration;
 import java.util.Optional;
 
 /**
- * Cache 4 — order:status:{orderId}  (STRING "STATUS|userId")
+ * Cache 4 — order:status:{orderId}  (STRING "STATUS|userId|storeId")
  *
- * Stores the current status and owner userId together so that ownership
- * can be verified in the same single read, without a separate C2 lookup.
+ * Stores the current status, owner userId, and owner storeId together so
+ * customer/store ownership can be verified in the same single read, without a
+ * separate C2 lookup.
  *
  * Invariant: this key and the {@code status} field inside
  * order:tracking:{orderId} must always be updated together.
@@ -25,7 +26,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class OrderStatusRedisRepository {
 
-    public record Entry(String status, String userId) {}
+    public record Entry(String status, String userId, String storeId) {}
 
     /** Matches the TTL of Cache 2 (order:{orderId}) so both expire together. */
     static final Duration TTL = Duration.ofHours(48);
@@ -37,8 +38,8 @@ public class OrderStatusRedisRepository {
      * Must always be called in sync with {@link OrderTrackingRedisRepository#save}
      * so Cache 3 and Cache 4 never hold conflicting status values.
      */
-    public void save(String orderId, String userId, String status) {
-        redisTemplate.opsForValue().set(RedisKeys.orderStatus(orderId), status + "|" + userId, TTL);
+    public void save(String orderId, String userId, String storeId, String status) {
+        redisTemplate.opsForValue().set(RedisKeys.orderStatus(orderId), status + "|" + userId + "|" + storeId, TTL);
     }
 
     /**
@@ -47,9 +48,9 @@ public class OrderStatusRedisRepository {
     public Optional<Entry> findById(String orderId) {
         String raw = redisTemplate.opsForValue().get(RedisKeys.orderStatus(orderId));
         if (raw == null) return Optional.empty();
-        int sep = raw.indexOf('|');
-        if (sep < 0) return Optional.empty();
-        return Optional.of(new Entry(raw.substring(0, sep), raw.substring(sep + 1)));
+        String[] parts = raw.split("\\|", -1);
+        if (parts.length != 3) return Optional.empty();
+        return Optional.of(new Entry(parts[0], parts[1], parts[2]));
     }
 
     /** Deletes the status entry — called when an order is completed or cancelled. */

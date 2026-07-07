@@ -65,7 +65,7 @@ com.sebet.order_service
 
 ## Implemented Boundaries
 
-- Controllers define endpoint contracts. Customer read endpoints and the first store lifecycle write endpoints are implemented; remaining customer writes, store reads, remaining store writes, driver methods, and internal methods still throw `UnsupportedOperationException`.
+- Controllers define endpoint contracts. Customer read endpoints, store read endpoints, and the first store lifecycle write endpoints are implemented; remaining customer writes, remaining store writes, driver methods, and internal methods still throw `UnsupportedOperationException`.
 - `OrderCreationService` creates durable orders, order items, and initial status history from an internal command.
 - Checkout integration DTOs model the cart-service checkout event.
 - `CheckoutConfirmedEventMapper` translates checkout events into order creation commands.

@@ -2,7 +2,7 @@
 
 ## Current Tests
 
-The project currently has 115 tests covering:
+The project currently has 135 tests covering:
 
 - Redis key generation.
 - MVC interceptor tests for `X-User-Id` and `X-Store-Id`.
@@ -13,11 +13,15 @@ The project currently has 115 tests covering:
 - Checkout event processor lock unit tests.
 - Checkout Kafka listener and retry/DLT integration tests against real brokers.
 - `CustomerOrderQueryService` unit tests covering all 10 read methods: cache hit, DB fallback, ownership denial, timeline building, order number format, and batch item queries.
+- Customer status reads fallback to PostgreSQL when C4 has an invalid status value.
 - `CustomerOrderQueryService` integration tests against real Postgres and Redis containers covering the full read path: history feed, active orders, smart router, delivered/cancelled flows, ownership checks, and C4 expiry fallback.
+- `StoreOrderQueryService` unit tests covering history, active orders, scheduled orders, detail mapping, proposal merge, status cache reads, stale Redis fallback, DB fallback, and wrong-store ownership hiding.
 - `OrderLifecycleService` unit tests for store `accept`, `reject`, and `ready` transitions, invalid transitions, wrong-store ownership hiding, and invalid UUID handling.
 - `OrderLifecycleRedisUpdater` unit tests for status updates, `PACKED` timeline append behavior, duplicate timeline prevention, and cancellation hot-view cleanup.
 - `StoreOrderLifecycleService` unit tests for full `OUT_OF_STOCK` reject validation and rejection metadata persistence.
 - repository tests for optimistic locking and per-order product uniqueness.
+- Redis store membership repository tests for active and scheduled TTL refresh.
+- Redis order status repository tests for customer/store ownership serialization.
 
 The Spring context test uses Testcontainers to start PostgreSQL, Redis, and
 Kafka, then boots the application with the `test` Spring profile.
@@ -66,7 +70,10 @@ Compile without running tests:
 - optimistic locking and per-order product uniqueness
 - order creation behavior
 - Redis hot-view writes for immediate and scheduled order creation
+- Redis store membership TTL refresh
+- Redis order status customer/store ownership serialization
 - store accept/reject/ready lifecycle transitions
+- store read service mapping and ownership checks
 - `OUT_OF_STOCK` rejection validation against persisted order items
 - invalid lifecycle transition handling
 - lifecycle Redis status/timeline/cancellation updates
@@ -81,7 +88,6 @@ Add unit tests for:
 - Redis repository serialization/deserialization
 - active-order removal Lua behavior
 - lock release Lua behavior
-- store read service mapping when implemented
 - customer write service behavior when implemented
 - driver/internal lifecycle service behavior when implemented
 
@@ -109,9 +115,9 @@ Implemented integration coverage:
 - Kafka retry/DLT behavior
 - checkout event consumption with Redis lock support
 
-Add integration tests when implemented:
+Additional integration tests to add:
 
-- store-facing read methods
+- store-facing read methods with real Postgres and Redis
 - store-facing lifecycle write methods with real Postgres and Redis
 - remaining order status transition service methods
 - Redis repositories

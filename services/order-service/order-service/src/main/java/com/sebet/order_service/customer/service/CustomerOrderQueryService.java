@@ -124,9 +124,7 @@ public class CustomerOrderQueryService {
             throw new OrderNotFoundException(orderId);
         }
 
-        OrderStatus status = orderStatusRedisRepository.findById(orderId)
-                .map(e -> OrderStatus.valueOf(e.status()))
-                .orElse(null);
+        OrderStatus status = statusFromCacheOrDatabase(orderId, userId);
 
         List<TimelineStepResponse> timeline = buildTimeline(
                 orderTimelineRedisRepository.findAll(orderId));
@@ -230,7 +228,10 @@ public class CustomerOrderQueryService {
             if (!userId.equals(cached.get().userId())) {
                 throw new OrderNotFoundException(orderId);
             }
-            return new OrderStatusResponse(orderId, OrderStatus.valueOf(cached.get().status()));
+            Optional<OrderStatus> status = parseStatus(cached.get().status());
+            if (status.isPresent()) {
+                return new OrderStatusResponse(orderId, status.get());
+            }
         }
         OrderEntity entity = orderRepository.findByIdAndCustomerId(parseOrderId(orderId), userId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
@@ -297,6 +298,14 @@ public class CustomerOrderQueryService {
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
     }
 
+    private OrderStatus statusFromCacheOrDatabase(String orderId, String userId) {
+        return orderStatusRedisRepository.findById(orderId)
+                .flatMap(entry -> parseStatus(entry.status()))
+                .orElseGet(() -> orderRepository.findByIdAndCustomerId(parseOrderId(orderId), userId)
+                        .map(OrderEntity::getStatus)
+                        .orElse(null));
+    }
+
     private DeliveredOrderDetailResponse buildDeliveredDetail(OrderEntity order, String orderId) {
         List<OrderItemEntity> items =
                 orderItemRepository.findByOrderIdOrderByLineNumberAsc(order.getId());
@@ -352,6 +361,14 @@ public class CustomerOrderQueryService {
             case DELIVERED -> "ARRIVED";
             default -> null;
         };
+    }
+
+    private Optional<OrderStatus> parseStatus(String value) {
+        try {
+            return Optional.of(OrderStatus.valueOf(value));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
     }
 
     private OrderHistoryItemResponse toHistoryItem(OrderEntity order, List<OrderItemEntity> items) {

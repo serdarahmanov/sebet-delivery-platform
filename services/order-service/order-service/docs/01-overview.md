@@ -28,6 +28,7 @@ Implemented:
 - Redis lock for checkout order creation
 - Redis hot-view writes during checkout order creation
 - customer read service methods
+- store read service methods
 - first store lifecycle write endpoints: accept, reject, and ready
 - repository, order creation, and Kafka listener integration tests
 - global exception handler for controller-handled exceptions
@@ -36,7 +37,6 @@ Implemented:
 Pending:
 
 - customer write service methods
-- store read service methods
 - remaining store write service methods
 - driver and internal service methods
 - order event producers

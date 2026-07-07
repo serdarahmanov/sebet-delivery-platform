@@ -49,7 +49,7 @@ public class OrderCreationRedisWriter {
             orderRedisRepository.save(toRedisOrder(order));
         }
 
-        orderStatusRedisRepository.save(orderId, order.getCustomerId(), order.getStatus().name());
+        orderStatusRedisRepository.save(orderId, order.getCustomerId(), order.getStoreId(), order.getStatus().name());
 
         if (orderTimelineRedisRepository.findAll(orderId).isEmpty()) {
             for (OrderTimelineEntry entry : toTimelineEntries(order)) {

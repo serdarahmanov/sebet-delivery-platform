@@ -206,7 +206,7 @@ class CustomerOrderQueryServiceTest {
         String orderId = UUID.randomUUID().toString();
         RedisOrder snap = snapshot(orderId, "user-1");
         when(orderRedisRepository.findById(orderId)).thenReturn(Optional.of(snap));
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("PENDING", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("PENDING", "user-1", "store-1")));
         when(orderTimelineRedisRepository.findAll(orderId)).thenReturn(List.of(
                 new OrderTimelineEntry("PLACED", "2026-07-06T10:00:00Z")
         ));
@@ -248,7 +248,7 @@ class CustomerOrderQueryServiceTest {
     void getActiveOrderDetail_includesVerificationCodeWhenStatusIsArrived() {
         String orderId = UUID.randomUUID().toString();
         when(orderRedisRepository.findById(orderId)).thenReturn(Optional.of(snapshot(orderId, "user-1")));
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("ARRIVED", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("ARRIVED", "user-1", "store-1")));
         when(orderTimelineRedisRepository.findAll(orderId)).thenReturn(List.of());
         when(verificationCodeRedisRepository.findById(orderId))
                 .thenReturn(Optional.of(new VerificationCodeCacheDto("47", "2026-07-06T12:00:00Z", null)));
@@ -262,12 +262,28 @@ class CustomerOrderQueryServiceTest {
     void getActiveOrderDetail_doesNotFetchVerificationCodeForNonArrivedStatus() {
         String orderId = UUID.randomUUID().toString();
         when(orderRedisRepository.findById(orderId)).thenReturn(Optional.of(snapshot(orderId, "user-1")));
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("OUT_FOR_DELIVERY", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("OUT_FOR_DELIVERY", "user-1", "store-1")));
         when(orderTimelineRedisRepository.findAll(orderId)).thenReturn(List.of());
 
         service.getActiveOrderDetail("user-1", orderId);
 
         verify(verificationCodeRedisRepository, never()).findById(any());
+    }
+
+    @Test
+    void getActiveOrderDetail_fallsBackToDbWhenCachedStatusIsInvalid() {
+        UUID id = UUID.randomUUID();
+        String orderId = id.toString();
+        when(orderRedisRepository.findById(orderId)).thenReturn(Optional.of(snapshot(orderId, "user-1")));
+        when(orderStatusRedisRepository.findById(orderId))
+                .thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("NOT_A_STATUS", "user-1", "store-1")));
+        when(orderRepository.findByIdAndCustomerId(id, "user-1"))
+                .thenReturn(Optional.of(entity(id, "user-1", OrderStatus.READY_FOR_PICKUP)));
+        when(orderTimelineRedisRepository.findAll(orderId)).thenReturn(List.of());
+
+        ActiveOrderDetailResponse result = service.getActiveOrderDetail("user-1", orderId);
+
+        assertThat(result.status()).isEqualTo(OrderStatus.READY_FOR_PICKUP);
     }
 
     @Test
@@ -279,7 +295,7 @@ class CustomerOrderQueryServiceTest {
                 .rating(4.9).vehicle("Toyota Corolla").plateNumber("06 AB 123")
                 .build());
         when(orderRedisRepository.findById(orderId)).thenReturn(Optional.of(snap));
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("OUT_FOR_DELIVERY", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("OUT_FOR_DELIVERY", "user-1", "store-1")));
         when(orderTimelineRedisRepository.findAll(orderId)).thenReturn(List.of());
 
         ActiveOrderDetailResponse result = service.getActiveOrderDetail("user-1", orderId);
@@ -430,7 +446,7 @@ class CustomerOrderQueryServiceTest {
     @Test
     void getOrderStatus_returnsStatusFromC4WhenPresent() {
         String orderId = UUID.randomUUID().toString();
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("CONFIRMED", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("CONFIRMED", "user-1", "store-1")));
 
         OrderStatusResponse result = service.getOrderStatus("user-1", orderId);
 
@@ -455,7 +471,7 @@ class CustomerOrderQueryServiceTest {
     @Test
     void getOrderStatus_throwsNotFoundWhenC4ShowsWrongOwner() {
         String orderId = UUID.randomUUID().toString();
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("PENDING", "other-user")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("PENDING", "other-user", "store-1")));
 
         assertThatThrownBy(() -> service.getOrderStatus("user-1", orderId))
                 .isInstanceOf(OrderNotFoundException.class);
@@ -465,11 +481,26 @@ class CustomerOrderQueryServiceTest {
     // ── getOrderTracking ──────────────────────────────────────────────────────
 
     @Test
+    void getOrderStatus_fallsBackToDbWhenCachedStatusIsInvalid() {
+        UUID id = UUID.randomUUID();
+        String orderId = id.toString();
+        when(orderStatusRedisRepository.findById(orderId))
+                .thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("NOT_A_STATUS", "user-1", "store-1")));
+        when(orderRepository.findByIdAndCustomerId(id, "user-1"))
+                .thenReturn(Optional.of(entity(id, "user-1", OrderStatus.CONFIRMED)));
+
+        OrderStatusResponse result = service.getOrderStatus("user-1", orderId);
+
+        assertThat(result.status()).isEqualTo(OrderStatus.CONFIRMED);
+        verify(orderRedisRepository, never()).findById(any());
+    }
+
+    @Test
     void getOrderTracking_returnsLiveGpsWhenC3Present() {
         String orderId = UUID.randomUUID().toString();
         when(orderRedisRepository.findById(orderId))
                 .thenReturn(Optional.of(snapshot(orderId, "user-1")));
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("OUT_FOR_DELIVERY", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("OUT_FOR_DELIVERY", "user-1", "store-1")));
         when(orderTrackingRedisRepository.findById(orderId)).thenReturn(Optional.of(
                 RedisOrderTracking.builder()
                         .etaMinutes(8).driverLat(41.315).driverLng(69.283)
@@ -490,7 +521,7 @@ class CustomerOrderQueryServiceTest {
         String orderId = UUID.randomUUID().toString();
         when(orderRedisRepository.findById(orderId))
                 .thenReturn(Optional.of(snapshot(orderId, "user-1")));
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("CONFIRMED", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("CONFIRMED", "user-1", "store-1")));
         when(orderTrackingRedisRepository.findById(orderId)).thenReturn(Optional.empty());
 
         OrderTrackingResponse result = service.getOrderTracking("user-1", orderId);
@@ -575,7 +606,7 @@ class CustomerOrderQueryServiceTest {
     void getActiveOrderDetail_timelineAlwaysHasFourStepsWithNullsForFutureSteps() {
         String orderId = UUID.randomUUID().toString();
         when(orderRedisRepository.findById(orderId)).thenReturn(Optional.of(snapshot(orderId, "user-1")));
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("CONFIRMED", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("CONFIRMED", "user-1", "store-1")));
         when(orderTimelineRedisRepository.findAll(orderId)).thenReturn(List.of(
                 new OrderTimelineEntry("PLACED", "2026-07-06T10:00:00Z"),
                 new OrderTimelineEntry("PACKED", "2026-07-06T10:09:00Z")
@@ -629,7 +660,7 @@ class CustomerOrderQueryServiceTest {
         UUID id = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
         String orderId = id.toString();
         when(orderRedisRepository.findById(orderId)).thenReturn(Optional.of(snapshot(orderId, "user-1")));
-        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("PENDING", "user-1")));
+        when(orderStatusRedisRepository.findById(orderId)).thenReturn(Optional.of(new OrderStatusRedisRepository.Entry("PENDING", "user-1", "store-1")));
         when(orderTimelineRedisRepository.findAll(orderId)).thenReturn(List.of());
 
         ActiveOrderDetailResponse result = service.getActiveOrderDetail("user-1", orderId);
