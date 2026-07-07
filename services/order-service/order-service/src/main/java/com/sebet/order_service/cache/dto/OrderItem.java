@@ -17,6 +17,7 @@ public class OrderItem {
 
     private String productId;
     private String name;
+    private String imageUrl;
     private int quantity;
     private BigDecimal unitPrice;
     private BigDecimal subtotal;

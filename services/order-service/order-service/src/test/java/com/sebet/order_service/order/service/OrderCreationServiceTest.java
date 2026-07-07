@@ -134,7 +134,7 @@ class OrderCreationServiceTest {
                 .extracting(OrderStatusHistoryEntity::getFromStatus, OrderStatusHistoryEntity::getToStatus)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple(null, OrderStatus.PENDING));
 
-        assertThat(orderStatusRedisRepository.findById(savedOrder.getId().toString()))
+        assertThat(orderStatusRedisRepository.findById(savedOrder.getId().toString()).map(OrderStatusRedisRepository.Entry::status))
                 .hasValue(OrderStatus.PENDING.name());
 
         assertThat(orderTimelineRedisRepository.findAll(savedOrder.getId().toString()))
@@ -188,7 +188,7 @@ class OrderCreationServiceTest {
                 .extracting(OrderStatusHistoryEntity::getToStatus)
                 .isEqualTo(OrderStatus.SCHEDULED);
 
-        assertThat(orderStatusRedisRepository.findById(result.order().getId().toString()))
+        assertThat(orderStatusRedisRepository.findById(result.order().getId().toString()).map(OrderStatusRedisRepository.Entry::status))
                 .hasValue(OrderStatus.SCHEDULED.name());
 
         assertThat(orderTimelineRedisRepository.findAll(result.order().getId().toString()))
@@ -224,7 +224,7 @@ class OrderCreationServiceTest {
         assertThat(orderItemRepository.findByOrderIdOrderByLineNumberAsc(firstResult.order().getId())).hasSize(2);
         assertThat(orderStatusHistoryRepository.findByOrderIdOrderByCreatedAtAsc(firstResult.order().getId())).hasSize(1);
         assertThat(orderRedisRepository.findById(firstResult.order().getId().toString())).isPresent();
-        assertThat(orderStatusRedisRepository.findById(firstResult.order().getId().toString()))
+        assertThat(orderStatusRedisRepository.findById(firstResult.order().getId().toString()).map(OrderStatusRedisRepository.Entry::status))
                 .hasValue(OrderStatus.PENDING.name());
         assertThat(orderTimelineRedisRepository.findAll(firstResult.order().getId().toString())).hasSize(1);
         assertThat(activeOrdersRedisRepository.count("customer-1")).isEqualTo(1L);
@@ -254,7 +254,7 @@ class OrderCreationServiceTest {
 
         assertThat(secondResult.createdNewOrder()).isFalse();
         assertThat(orderRedisRepository.findById(orderId)).isPresent();
-        assertThat(orderStatusRedisRepository.findById(orderId)).hasValue(OrderStatus.PENDING.name());
+        assertThat(orderStatusRedisRepository.findById(orderId).map(OrderStatusRedisRepository.Entry::status)).hasValue(OrderStatus.PENDING.name());
         assertThat(orderTimelineRedisRepository.findAll(orderId)).hasSize(1);
         assertThat(activeOrdersRedisRepository.contains("customer-1", orderId)).isTrue();
         assertThat(storeActiveOrdersRedisRepository.contains("store-1", orderId)).isTrue();
@@ -311,7 +311,7 @@ class OrderCreationServiceTest {
         CreateOrderResult secondResult = orderCreationService.createOrder(command);
 
         assertThat(secondResult.createdNewOrder()).isFalse();
-        assertThat(orderStatusRedisRepository.findById(orderId))
+        assertThat(orderStatusRedisRepository.findById(orderId).map(OrderStatusRedisRepository.Entry::status))
                 .hasValue(OrderStatus.DELIVERED.name());
         assertThat(orderTimelineRedisRepository.findAll(orderId))
                 .extracting(OrderTimelineEntry::getStatus)

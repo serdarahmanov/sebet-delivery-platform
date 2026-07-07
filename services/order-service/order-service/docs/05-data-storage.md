@@ -38,7 +38,7 @@ Key patterns:
 | C1c | `store:scheduled_orders:{storeId}` | ZSET | Scheduled orders per store |
 | C2 | `order:{orderId}` | STRING/JSON | Static order snapshot |
 | C3 | `order:tracking:{orderId}` | STRING/JSON | Live tracking state |
-| C4 | `order:status:{orderId}` | STRING | Current order status |
+| C4 | `order:status:{orderId}` | STRING | Current status and owner userId (`"STATUS\|userId"`) |
 | C5 | `order:lock:{cartId}` | STRING | Order creation lock |
 | C6 | `order:timeline:{orderId}` | LIST/JSON | Customer timeline |
 | C7 | `order:verification:{orderId}` | STRING/JSON | Delivery verification code |
@@ -48,7 +48,7 @@ Key patterns:
 
 - C2 static order snapshot has a 48-hour TTL.
 - C3 tracking data is intended to be short-lived live state.
-- C4 status is separated from C2 to allow cheap status reads.
+- C4 stores `"STATUS|userId"` so status reads and ownership verification are a single round-trip, with no C2 lookup needed for the status endpoint.
 - C5 lock uses `SET NX EX` with a 30-second TTL.
 - C6 timeline is append-only customer-facing progress.
 - C7 verification code is short-lived and generated near delivery arrival.

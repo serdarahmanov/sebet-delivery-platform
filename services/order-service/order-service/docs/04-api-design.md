@@ -111,13 +111,38 @@ Endpoint groups:
 
 ## Current Implementation Status
 
-The controllers define request mappings and DTO contracts, but every endpoint currently throws:
+### Customer API — GET endpoints (implemented)
+
+The following customer read endpoints are fully implemented in `CustomerOrderQueryService`:
+
+| Endpoint | Source | Status |
+|---|---|---|
+| `GET /api/v1/orders` | DB | ✅ implemented |
+| `GET /api/v1/orders/active` | C1 → C2 | ✅ implemented |
+| `GET /api/v1/orders/active/{orderId}` | C2 + C4 + C6 + C7 | ✅ implemented |
+| `GET /api/v1/orders/scheduled/{orderId}` | DB | ✅ implemented |
+| `GET /api/v1/orders/cancelled/{orderId}` | DB | ✅ implemented |
+| `GET /api/v1/orders/{orderId}` | DB (smart router) | ✅ implemented |
+| `GET /api/v1/orders/{orderId}/status` | C4 → DB | ✅ implemented |
+| `GET /api/v1/orders/{orderId}/tracking` | C4 + C3 | ✅ implemented |
+| `GET /api/v1/orders/{orderId}/verification-code` | C7 | ✅ implemented |
+| `GET /api/v1/orders/{orderId}/proposed-changes` | C8 | ✅ implemented |
+
+### Customer API — write endpoints (pending)
+
+The following customer write endpoints still throw `UnsupportedOperationException`:
+
+- `PATCH /api/v1/orders/scheduled/{orderId}` — modify scheduled order
+- `POST  /api/v1/orders/{orderId}/respond-to-changes` — respond to store proposal
+- `POST  /api/v1/orders/{orderId}/cancel` — cancel order
+
+### All other APIs (pending)
+
+Store, driver, and internal controllers define DTO contracts but all endpoints throw:
 
 ```text
 UnsupportedOperationException("Not implemented yet")
 ```
-
-Treat the endpoints as API design contracts until service methods are implemented.
 
 ## Response Design
 

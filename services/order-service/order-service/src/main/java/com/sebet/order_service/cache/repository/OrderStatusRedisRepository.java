@@ -9,12 +9,10 @@ import java.time.Duration;
 import java.util.Optional;
 
 /**
- * Cache 4 — order:status:{orderId}  (STRING plain)
+ * Cache 4 — order:status:{orderId}  (STRING "STATUS|userId")
  *
- * Stores only the current status string for an order.
- * Exists separately from order:tracking so that status-only reads
- * (kitchen screen polling, push notification triggers) are cheap and
- * do not load the full GPS tracking payload.
+ * Stores the current status and owner userId together so that ownership
+ * can be verified in the same single read, without a separate C2 lookup.
  *
  * Invariant: this key and the {@code status} field inside
  * order:tracking:{orderId} must always be updated together.
@@ -27,30 +25,31 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class OrderStatusRedisRepository {
 
+    public record Entry(String status, String userId) {}
+
     /** Matches the TTL of Cache 2 (order:{orderId}) so both expire together. */
     static final Duration TTL = Duration.ofHours(48);
 
     private final StringRedisTemplate redisTemplate;
 
     /**
-     * Writes or overwrites the status string for an order.
+     * Writes or overwrites the status entry for an order.
      * Must always be called in sync with {@link OrderTrackingRedisRepository#save}
      * so Cache 3 and Cache 4 never hold conflicting status values.
-     *
-     * @param orderId the order whose status is changing
-     * @param status  the new status string, e.g. {@code "out_for_delivery"}
      */
-    public void save(String orderId, String status) {
-        redisTemplate.opsForValue().set(RedisKeys.orderStatus(orderId), status, TTL);
+    public void save(String orderId, String userId, String status) {
+        redisTemplate.opsForValue().set(RedisKeys.orderStatus(orderId), status + "|" + userId, TTL);
     }
 
     /**
-     * Returns the raw status string, or {@link Optional#empty()} on cache miss.
-     *
-     * @param orderId the order to look up
+     * Returns the status entry, or {@link Optional#empty()} on cache miss.
      */
-    public Optional<String> findById(String orderId) {
-        return Optional.ofNullable(redisTemplate.opsForValue().get(RedisKeys.orderStatus(orderId)));
+    public Optional<Entry> findById(String orderId) {
+        String raw = redisTemplate.opsForValue().get(RedisKeys.orderStatus(orderId));
+        if (raw == null) return Optional.empty();
+        int sep = raw.indexOf('|');
+        if (sep < 0) return Optional.empty();
+        return Optional.of(new Entry(raw.substring(0, sep), raw.substring(sep + 1)));
     }
 
     /** Deletes the status entry — called when an order is completed or cancelled. */

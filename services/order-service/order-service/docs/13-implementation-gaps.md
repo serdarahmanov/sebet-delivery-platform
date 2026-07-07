@@ -15,13 +15,16 @@ Implemented:
 - `OrderCreationService` creates durable orders from internal checkout commands.
 - Redis hot-view initialization for created orders from current database state.
 - `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment modelled as `driverId` / `driverAssignedAt` metadata fields on the order (added directly to V1 migration).
+- `CustomerOrderQueryService` — all 10 customer-facing GET methods (history feed, active orders list, active order detail, scheduled detail, cancelled detail, smart router, status, tracking, verification code, proposed changes). Redis-first with DB fallback; ownership verification returns 404 for both not-found and wrong-user (security by obscurity).
 
 Pending:
 
-- customer-facing service methods
 - store-facing service methods
-- order status transition service methods
-- proposals, tracking, verification, cancellation, and delivery completion behavior
+- order status transition service methods (accept, reject, pickup, arrive, complete, cancel, etc.)
+- proposals write path (respond-to-changes)
+- cancellation write path (customer cancel)
+- delivery completion behavior
+- scheduled order update write path
 - hot-view repair for non-checkout write paths
 
 ## Database
@@ -105,10 +108,14 @@ Implemented:
 - Input validation for amount fields (`>= 0`) in `CheckoutConfirmedEvent` and `CreateOrderCommand` compact constructors
 - `deliveryAddressJson` JSON parse validation in `OrderCreationService` before DB write
 
+Implemented:
+
+- `ORDER_NOT_FOUND` (404) — raised by `OrderNotFoundException`, used for both not-found and wrong-owner responses.
+
 Pending:
 
-- domain-specific error codes (`ORDER_NOT_FOUND`, `ORDER_NOT_CANCELLABLE`, etc.) as service layer is implemented
-- `403 Forbidden` and `409 Conflict` handling once lifecycle transition rules are enforced
+- `ORDER_NOT_CANCELLABLE`, `PROPOSAL_EXPIRED`, and other domain-specific codes as write paths are implemented
+- `409 Conflict` handling once lifecycle transition rules are enforced
 
 ## Deployment
 

@@ -3,12 +3,16 @@ package com.sebet.order_service.customer.controller;
 import com.sebet.order_service.customer.dto.request.RespondToOrderChangesRequest;
 import com.sebet.order_service.customer.dto.request.UpdateScheduledOrderRequest;
 import com.sebet.order_service.customer.dto.response.*;
+import com.sebet.order_service.customer.service.CustomerOrderQueryService;
+import com.sebet.order_service.customer.service.CustomerOrderRouterResult;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -47,6 +51,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CustomerOrderController {
 
+    private final CustomerOrderQueryService queryService;
+
     // ── History ──────────────────────────────────────────────────────────────
 
     /**
@@ -60,7 +66,7 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getOrderHistory(userId, pageable));
     }
 
     // ── Active ───────────────────────────────────────────────────────────────
@@ -74,7 +80,7 @@ public class CustomerOrderController {
     public ResponseEntity<List<ActiveOrderItemResponse>> getActiveOrders(
             @RequestHeader("X-User-Id") String userId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getActiveOrders(userId));
     }
 
     /**
@@ -87,7 +93,7 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getActiveOrderDetail(userId, orderId));
     }
 
     // ── Scheduled ────────────────────────────────────────────────────────────
@@ -98,7 +104,7 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getScheduledOrderDetail(userId, orderId));
     }
 
     /**
@@ -128,7 +134,7 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getCancelledOrderDetail(userId, orderId));
     }
 
     // ── Delivered ────────────────────────────────────────────────────────────
@@ -152,7 +158,14 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        CustomerOrderRouterResult result = queryService.routeOrderDetail(userId, orderId);
+        if (result instanceof CustomerOrderRouterResult.Delivered d) {
+            return ResponseEntity.ok(d.response());
+        }
+        CustomerOrderRouterResult.Redirect r = (CustomerOrderRouterResult.Redirect) result;
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, r.location())
+                .build();
     }
 
     // ── Status & Tracking ────────────────────────────────────────────────────
@@ -167,7 +180,7 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getOrderStatus(userId, orderId));
     }
 
     /**
@@ -180,7 +193,7 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getOrderTracking(userId, orderId));
     }
 
     // ── Verification code ────────────────────────────────────────────────────
@@ -203,7 +216,7 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getVerificationCode(userId, orderId));
     }
 
     // ── Proposed changes ─────────────────────────────────────────────────────
@@ -223,7 +236,7 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(queryService.getProposedChanges(userId, orderId));
     }
 
     /**

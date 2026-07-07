@@ -59,6 +59,12 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("NOT_FOUND", "The requested resource was not found"));
     }
 
+    @ExceptionHandler(OrderNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleOrderNotFound(OrderNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("ORDER_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(UnsupportedOperationException.class)
     public ResponseEntity<ErrorResponse> handleUnsupportedOperation(UnsupportedOperationException ex) {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)

@@ -49,7 +49,7 @@ public class OrderCreationRedisWriter {
             orderRedisRepository.save(toRedisOrder(order));
         }
 
-        orderStatusRedisRepository.save(orderId, order.getStatus().name());
+        orderStatusRedisRepository.save(orderId, order.getCustomerId(), order.getStatus().name());
 
         if (orderTimelineRedisRepository.findAll(orderId).isEmpty()) {
             for (OrderTimelineEntry entry : toTimelineEntries(order)) {
@@ -129,6 +129,7 @@ public class OrderCreationRedisWriter {
                 .map(item -> OrderItem.builder()
                         .productId(item.getProductId())
                         .name(item.getProductName())
+                        .imageUrl(item.getImageUrl())
                         .quantity(item.getQuantity().intValueExact())
                         .unitPrice(item.getUnitPriceAmount())
                         .subtotal(item.getGrossAmount())
