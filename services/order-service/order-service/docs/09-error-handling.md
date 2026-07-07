@@ -62,7 +62,7 @@ Interceptors reject missing or invalid identity headers before reaching the exce
 - driver endpoints (`/api/v1/driver/**`): `X-Driver-Id`
 - internal endpoints (`/api/v1/internal/**`): `X-Internal-Key`
 
-Customer, store, and driver interceptors call `response.sendError(400, ...)` directly and bypass `GlobalExceptionHandler`. The internal interceptor returns `401` for a missing `X-Internal-Key` and `403` for an invalid key when `order-service.internal.secret` is configured.
+Customer, store, and driver interceptors call `response.sendError(400, ...)` directly and bypass `GlobalExceptionHandler`. The internal interceptor returns `401` for a missing `X-Internal-Key` and `403` for an invalid key. `order-service.internal.secret` must be configured in every environment or the application fails startup.
 
 ## Design Rule
 

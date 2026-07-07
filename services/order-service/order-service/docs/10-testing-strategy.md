@@ -2,10 +2,11 @@
 
 ## Current Tests
 
-The project currently has 136 tests covering:
+The project currently has 143 tests covering:
 
 - Redis key generation.
-- MVC interceptor tests for `X-User-Id` and `X-Store-Id`.
+- MVC interceptor tests for `X-User-Id`, `X-Store-Id`, and `X-Internal-Key`.
+- Internal-auth secret startup validation for every environment.
 - Spring context test with PostgreSQL, Redis, and Kafka Testcontainers.
 - JPA repository tests against PostgreSQL Testcontainers.
 - Order creation service integration tests.
@@ -63,6 +64,7 @@ Compile without running tests:
 - Redis key generation
 - required `X-User-Id`
 - required `X-Store-Id`
+- internal API key validation and fail-fast behavior when the secret is blank
 - checkout event mapping
 - checkout event consumer delegation
 - checkout event processor Redis lock behavior

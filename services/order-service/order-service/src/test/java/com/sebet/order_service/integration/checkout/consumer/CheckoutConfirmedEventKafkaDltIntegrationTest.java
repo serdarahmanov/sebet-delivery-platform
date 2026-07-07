@@ -79,6 +79,7 @@ class CheckoutConfirmedEventKafkaDltIntegrationTest {
                 () -> "org.apache.kafka.common.serialization.StringSerializer");
         registry.add("spring.kafka.producer.value-serializer",
                 () -> "org.springframework.kafka.support.serializer.JsonSerializer");
+        registry.add("order-service.internal.secret", () -> "test-internal-secret");
         registry.add("order-service.kafka.checkout-events.topic", () -> TOPIC);
         registry.add("order-service.kafka.checkout-events.group-id", () -> "order-service-dlt-it");
         registry.add("order-service.kafka.checkout-events.auto-startup", () -> "true");

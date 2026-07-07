@@ -64,3 +64,7 @@ Do not deploy as a complete production order processor until REST-facing service
 
 For checkout event consumption, do not disable DLT topic validation in production
 unless topic readiness is enforced by another deployment gate.
+
+`ORDER_SERVICE_INTERNAL_SECRET` must be set to a non-blank value in every
+environment. The service fails startup without it so internal endpoints cannot
+accidentally accept arbitrary non-blank keys.

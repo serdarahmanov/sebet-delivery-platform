@@ -64,6 +64,7 @@ class OrderCreationServiceTest {
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
         registry.add("spring.kafka.bootstrap-servers", () -> "localhost:9092");
+        registry.add("order-service.internal.secret", () -> "test-internal-secret");
     }
 
     @Autowired

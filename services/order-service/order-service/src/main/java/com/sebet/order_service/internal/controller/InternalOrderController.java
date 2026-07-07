@@ -37,7 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * ── Auth ─────────────────────────────────────────────────────────────────────
  *   X-Internal-Key is validated against {@code order-service.internal.secret}.
- *   When the secret is not configured (dev/test), any non-blank key is accepted.
+ *   When the secret is not configured, the application fails startup in every
+ *   environment.
  *
  * ── Guards ───────────────────────────────────────────────────────────────────
  *   /assign-driver      : order must not be DELIVERED or CANCELLED

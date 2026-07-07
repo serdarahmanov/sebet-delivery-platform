@@ -120,6 +120,7 @@ Implemented:
 - `ErrorResponse` record (`shared/exception/`) with `code`, `message`, and `timestamp` fields.
 - Input validation for amount fields (`>= 0`) in `CheckoutConfirmedEvent` and `CreateOrderCommand` compact constructors.
 - `deliveryAddressJson` JSON parse validation in `OrderCreationService` before DB write.
+- `InternalAuthInterceptor` fails startup in every environment when `order-service.internal.secret` is blank.
 - `ORDER_NOT_FOUND` (404), raised by `OrderNotFoundException`, is used for both not-found and wrong-owner responses.
 - `ORDER_INVALID_TRANSITION` (409), raised by `OrderInvalidTransitionException`, is used for invalid lifecycle transitions.
 - `OptimisticLockingFailureException` is mapped to `ORDER_INVALID_TRANSITION` (409) for stale concurrent lifecycle writes.

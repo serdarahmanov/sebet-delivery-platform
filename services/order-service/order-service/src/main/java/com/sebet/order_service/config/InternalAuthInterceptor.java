@@ -1,5 +1,6 @@
 package com.sebet.order_service.config;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,7 +17,7 @@ import java.io.IOException;
  *
  * Behaviour by configuration:
  *   - Secret configured : header must be present AND match the configured value.
- *   - Secret not set    : header must be present and non-blank (dev/test convenience).
+ *   - Secret not set    : startup fails in every environment.
  *
  * The secret is expected to be injected by the API gateway or set directly in the
  * calling service's outbound headers — this interceptor does not issue or rotate secrets.
@@ -24,8 +25,22 @@ import java.io.IOException;
 @Component
 public class InternalAuthInterceptor implements HandlerInterceptor {
 
-    @Value("${order-service.internal.secret:}")
-    private String configuredSecret;
+    private final String configuredSecret;
+
+    public InternalAuthInterceptor(
+            @Value("${order-service.internal.secret:}") String configuredSecret
+    ) {
+        this.configuredSecret = configuredSecret == null ? "" : configuredSecret;
+    }
+
+    @PostConstruct
+    void validateConfiguredSecret() {
+        if (configuredSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "order-service.internal.secret must be configured"
+            );
+        }
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
@@ -35,7 +50,7 @@ public class InternalAuthInterceptor implements HandlerInterceptor {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing X-Internal-Key header");
             return false;
         }
-        if (!configuredSecret.isBlank() && !configuredSecret.equals(key)) {
+        if (!configuredSecret.equals(key)) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "Invalid X-Internal-Key");
             return false;
         }
