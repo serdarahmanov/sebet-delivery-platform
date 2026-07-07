@@ -312,7 +312,7 @@ class StoreOrderQueryServiceTest {
                         .productId("product-1")
                         .name("Apples")
                         .imageUrl("https://cdn/apple.png")
-                        .quantity(2)
+                        .quantity(new BigDecimal("2.500"))
                         .unitPrice(new BigDecimal("12000.00"))
                         .subtotal(new BigDecimal("24000.00"))
                         .build()))
@@ -351,7 +351,7 @@ class StoreOrderQueryServiceTest {
         item.setLineNumber(1);
         item.setProductId("product-1");
         item.setProductName("Apples");
-        item.setQuantity(new BigDecimal("2.000"));
+        item.setQuantity(new BigDecimal("2.500"));
         item.setUnit(ProductUnit.KG);
         item.setUnitPriceAmount(new BigDecimal("12000.00"));
         item.setGrossAmount(new BigDecimal("24000.00"));

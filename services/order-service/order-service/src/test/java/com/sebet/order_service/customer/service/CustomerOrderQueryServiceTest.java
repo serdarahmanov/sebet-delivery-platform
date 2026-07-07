@@ -190,6 +190,17 @@ class CustomerOrderQueryServiceTest {
     }
 
     @Test
+    void getActiveOrders_skipsSnapshotsOwnedByAnotherUser() {
+        String orderId = UUID.randomUUID().toString();
+        when(activeOrdersRedisRepository.getAll("user-1")).thenReturn(Set.of(orderId));
+        when(orderRedisRepository.findById(orderId)).thenReturn(Optional.of(snapshot(orderId, "other-user")));
+
+        List<ActiveOrderItemResponse> result = service.getActiveOrders("user-1");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
     void getActiveOrders_returnsEmptyListWhenNoActiveOrders() {
         when(activeOrdersRedisRepository.getAll("user-1")).thenReturn(Set.of());
 
@@ -683,7 +694,7 @@ class CustomerOrderQueryServiceTest {
                 .storeLocation(StoreLocation.builder().lat(41.3201).lng(69.2405).build())
                 .items(List.of(OrderItem.builder()
                         .productId("product-1").name("Apples").imageUrl("https://cdn/apple.png")
-                        .quantity(2).unitPrice(new BigDecimal("12000")).subtotal(new BigDecimal("24000"))
+                        .quantity(new BigDecimal("2.500")).unitPrice(new BigDecimal("12000")).subtotal(new BigDecimal("24000"))
                         .build()))
                 .createdAt("2026-07-06T10:00:00Z")
                 .build();
@@ -723,7 +734,7 @@ class CustomerOrderQueryServiceTest {
         i.setLineNumber(1);
         i.setProductId("product-1");
         i.setProductName("Apples");
-        i.setQuantity(new BigDecimal("2.000"));
+        i.setQuantity(new BigDecimal("2.500"));
         i.setUnit(ProductUnit.KG);
         i.setUnitPriceAmount(new BigDecimal("12000.00"));
         i.setGrossAmount(new BigDecimal("24000.00"));

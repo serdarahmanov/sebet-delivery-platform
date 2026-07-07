@@ -50,6 +50,11 @@ Each item stores:
 - image URL
 - line number
 
+Quantities are decimal values. PostgreSQL stores `order_items.quantity` as
+`numeric(12, 3)`, and cache/API item DTOs preserve that decimal quantity so
+weighted and measured units such as `KG`, `GRAM`, `LITER`, and `ML` do not lose
+precision.
+
 `line_number` preserves the cart/receipt item order and is unique per order.
 `product_id` is also unique per order. Checkout is expected to merge duplicate
 products before order creation, and the database enforces that invariant so

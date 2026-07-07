@@ -19,7 +19,7 @@ public record OrderItemDto(
         String productId,
         String name,
         String imageUrl,
-        int quantity,
+        BigDecimal quantity,
         BigDecimal unitPrice,
         BigDecimal subtotal
 ) {}

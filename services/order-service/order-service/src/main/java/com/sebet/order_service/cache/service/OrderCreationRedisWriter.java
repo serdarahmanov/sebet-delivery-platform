@@ -130,7 +130,7 @@ public class OrderCreationRedisWriter {
                         .productId(item.getProductId())
                         .name(item.getProductName())
                         .imageUrl(item.getImageUrl())
-                        .quantity(item.getQuantity().intValueExact())
+                        .quantity(item.getQuantity())
                         .unitPrice(item.getUnitPriceAmount())
                         .subtotal(item.getGrossAmount())
                         .build())

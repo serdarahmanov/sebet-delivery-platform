@@ -16,7 +16,8 @@ Implemented:
 - Redis hot-view initialization for created orders from current database state.
 - `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment is modelled as `driverId` / `driverAssignedAt` metadata fields on the order.
 - `CustomerOrderQueryService` implements all 10 customer-facing GET methods: history feed, active orders list, active order detail, scheduled detail, cancelled detail, smart router, status, tracking, verification code, and proposed changes.
-- Customer read ownership verification returns 404 for both not-found and wrong-user responses.
+- Customer single-order read ownership verification returns 404 for both not-found and wrong-user responses.
+- Customer active-order list reads skip stale C1 entries whose C2 snapshot belongs to another user.
 - `StoreOrderQueryService` implements all 5 store-facing GET methods: history feed, active orders list, scheduled orders list, order detail, and status.
 - Store read ownership verification returns 404 for both not-found and wrong-store responses.
 - `OrderLifecycleService` implements the first store lifecycle transitions:
@@ -134,5 +135,4 @@ Pending:
 - Dockerfile
 - compose integration
 - Kubernetes manifest or Helm chart
-- production profile
 - health probes

@@ -113,6 +113,7 @@ public class CustomerOrderQueryService {
         return activeOrdersRedisRepository.getAll(userId).stream()
                 .map(orderId -> orderRedisRepository.findById(orderId).orElse(null))
                 .filter(Objects::nonNull)
+                .filter(order -> userId.equals(order.getUserId()))
                 .map(this::toActiveOrderItem)
                 .toList();
     }
@@ -484,7 +485,7 @@ public class CustomerOrderQueryService {
                         includeProductId ? item.getProductId() : null,
                         item.getProductName(),
                         item.getImageUrl(),
-                        item.getQuantity().intValueExact(),
+                        item.getQuantity(),
                         item.getUnitPriceAmount(),
                         item.getGrossAmount()))
                 .toList();

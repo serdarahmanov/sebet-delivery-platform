@@ -2,7 +2,7 @@
 
 ## Current Tests
 
-The project currently has 135 tests covering:
+The project currently has 136 tests covering:
 
 - Redis key generation.
 - MVC interceptor tests for `X-User-Id` and `X-Store-Id`.
@@ -13,6 +13,7 @@ The project currently has 135 tests covering:
 - Checkout event processor lock unit tests.
 - Checkout Kafka listener and retry/DLT integration tests against real brokers.
 - `CustomerOrderQueryService` unit tests covering all 10 read methods: cache hit, DB fallback, ownership denial, timeline building, order number format, and batch item queries.
+- Customer active-order reads filter out stale C1 entries whose C2 snapshot belongs to another user.
 - Customer status reads fallback to PostgreSQL when C4 has an invalid status value.
 - `CustomerOrderQueryService` integration tests against real Postgres and Redis containers covering the full read path: history feed, active orders, smart router, delivered/cancelled flows, ownership checks, and C4 expiry fallback.
 - `StoreOrderQueryService` unit tests covering history, active orders, scheduled orders, detail mapping, proposal merge, status cache reads, stale Redis fallback, DB fallback, and wrong-store ownership hiding.
@@ -74,6 +75,7 @@ Compile without running tests:
 - Redis order status customer/store ownership serialization
 - store accept/reject/ready lifecycle transitions
 - store read service mapping and ownership checks
+- customer active-order wrong-owner snapshot filtering
 - `OUT_OF_STOCK` rejection validation against persisted order items
 - invalid lifecycle transition handling
 - lifecycle Redis status/timeline/cancellation updates

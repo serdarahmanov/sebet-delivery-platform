@@ -103,5 +103,9 @@ New checkout orders now populate the hot-view keys after the database transactio
 Store read paths fall back to PostgreSQL if store membership keys point to
 missing or unusable per-order cache data.
 
+Customer active-order reads skip C1 entries whose C2 snapshot is missing or
+belongs to a different user. Single-order customer reads still hide wrong-owner
+access with `404 ORDER_NOT_FOUND`.
+
 JPA Open Session in View is disabled. Service methods should load and map all
 data needed by REST responses inside explicit transactional boundaries.

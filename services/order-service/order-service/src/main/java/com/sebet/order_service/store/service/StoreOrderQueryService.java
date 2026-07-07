@@ -401,7 +401,7 @@ public class StoreOrderQueryService {
                         item.getProductId(),
                         item.getProductName(),
                         item.getImageUrl(),
-                        item.getQuantity().intValueExact(),
+                        item.getQuantity(),
                         item.getUnitPriceAmount(),
                         item.getGrossAmount()
                 ))

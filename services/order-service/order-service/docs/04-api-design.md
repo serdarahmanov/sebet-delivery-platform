@@ -118,7 +118,7 @@ The following customer read endpoints are fully implemented in `CustomerOrderQue
 | Endpoint | Source | Status |
 |---|---|---|
 | `GET /api/v1/orders` | DB | implemented |
-| `GET /api/v1/orders/active` | C1 -> C2 | implemented |
+| `GET /api/v1/orders/active` | C1 -> C2 with user ownership filter | implemented |
 | `GET /api/v1/orders/active/{orderId}` | C2 + C4 + C6 + C7 | implemented |
 | `GET /api/v1/orders/scheduled/{orderId}` | DB | implemented |
 | `GET /api/v1/orders/cancelled/{orderId}` | DB | implemented |
@@ -127,6 +127,11 @@ The following customer read endpoints are fully implemented in `CustomerOrderQue
 | `GET /api/v1/orders/{orderId}/tracking` | C4 + C3 | implemented |
 | `GET /api/v1/orders/{orderId}/verification-code` | C7 | implemented |
 | `GET /api/v1/orders/{orderId}/proposed-changes` | C8 | implemented |
+
+Customer single-order read ownership checks return `404 ORDER_NOT_FOUND` for
+both missing orders and wrong-user orders. The customer active-order list also
+filters C2 snapshots by `userId`, so stale or corrupt C1 membership cannot
+return another customer's order.
 
 ### Customer API - Write Endpoints
 

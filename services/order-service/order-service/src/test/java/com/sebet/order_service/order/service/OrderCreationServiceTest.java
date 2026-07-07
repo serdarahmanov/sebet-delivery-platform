@@ -162,7 +162,7 @@ class OrderCreationServiceTest {
                     assertThat(snapshot.getItems()).hasSize(2);
                     assertThat(snapshot.getItems().get(0).getProductId()).isEqualTo("product-1");
                     assertThat(snapshot.getItems().get(0).getName()).isEqualTo("Apples");
-                    assertThat(snapshot.getItems().get(0).getQuantity()).isEqualTo(2);
+                    assertThat(snapshot.getItems().get(0).getQuantity()).isEqualByComparingTo("2.500");
                 });
 
         assertThat(activeOrdersRedisRepository.contains("customer-1", savedOrder.getId().toString())).isTrue();
@@ -343,7 +343,7 @@ class OrderCreationServiceTest {
                         new CreateOrderItemCommand(
                                 "product-1",
                                 "Apples",
-                                new BigDecimal("2.000"),
+                                new BigDecimal("2.500"),
                                 ProductUnit.KG,
                                 new BigDecimal("12000.00"),
                                 new BigDecimal("24000.00"),
