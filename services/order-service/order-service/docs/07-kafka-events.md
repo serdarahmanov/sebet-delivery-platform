@@ -8,14 +8,64 @@
 | `order.arrived` | `OrderArrivedEvent` | Generate delivery verification code and update tracking | Pending |
 | `driver-location-events` | `DriverLocationUpdatedEvent` | Update Cache 3 (movementStatus, driverLat, driverLng, etaMinutes) and push WebSocket tracking update to customer | Pending |
 
-## Planned Produced Topics
+## Produced Topics
 
 | Topic | Event | Trigger |
 |---|---|---|
-| `order-events` | `OrderCreatedEvent` | after order is created |
-| `order-events` | `OrderStatusChangedEvent` | after status transition |
-| `order-events` | `OrderCancelledEvent` | after cancellation |
-| `order-events` | `OrderDeliveredEvent` | after delivery verification |
+| `order-events` | `OrderCreated` | after an immediate order is created |
+| `order-events` | `OrderScheduled` | after a scheduled order is created |
+| `order-events` | `OrderActivated` | after a scheduled order enters the live queue |
+| `order-events` | `OrderAccepted` | after store acceptance |
+| `order-events` | `OrderCancelled` | after any cancellation |
+| `order-events` | `OrderReadyForPickup` | after store marks the order ready |
+| `order-events` | `OrderPickedUp` | after driver pickup |
+| `order-events` | `OrderArrived` | after driver arrival |
+| `order-events` | `OrderDelivered` | after delivery verification |
+
+Order-service records produced events in the local `outbox_event` table. Debezium
+is responsible for reading the database transaction log and publishing those
+rows to Kafka. The application does not publish order business events directly
+with `KafkaTemplate`.
+
+See [Debezium Outbox](14-debezium-outbox.md) for the connector contract and
+sample configuration.
+
+Outbox table columns:
+
+```text
+id
+aggregate_type
+aggregate_id
+event_type
+event_key
+payload
+headers
+occurred_at
+created_at
+```
+
+`id` is the event id. `event_key` is the Kafka key and should be used for
+partitioning; for order events it is the order id. The canonical event version
+lives in `payload.version`, not in a separate table column.
+
+Produced event envelope:
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "OrderCreated",
+  "aggregateId": "order-id",
+  "aggregateType": "Order",
+  "version": 1,
+  "occurredAt": "2026-07-08T10:00:00Z",
+  "source": "order-service",
+  "data": {}
+}
+```
+
+Consumers should treat delivery as at-least-once. Use `eventId` for exact-event
+deduplication and `version` for stale or out-of-order aggregate protection when
+maintaining projections.
 
 ## Order Creation Event Flow
 
@@ -25,8 +75,8 @@ Target flow:
 2. Acquire `order:lock:{cartId}`.
 3. Map it to `CreateOrderCommand`.
 4. Persist order in PostgreSQL.
-5. Write Redis hot keys after commit.
-6. Publish order-created/status event.
+5. Insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction.
+6. Write Redis hot keys after commit.
 7. Release lock.
 
 Implemented pieces:
@@ -40,6 +90,8 @@ Implemented pieces:
 - `CheckoutConfirmedEventProcessor`
 - `OrderCreationService`
 - `OrderCreationRedisWriter`
+- `OrderEventOutboxWriter`
+- `OutboxEventRepository`
 
 The mapper preserves item order, item-level discounts, order-level discounts, address snapshot, delivery coordinates, store coordinates, schedule type, and `cartId`.
 
@@ -49,6 +101,8 @@ Currently implemented in the flow:
 - acquire and release `order:lock:{cartId}` around order creation
 - map it to `CreateOrderCommand`
 - persist order, order items, and initial status history in PostgreSQL
+- insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction
+- insert specialized lifecycle events into `outbox_event` in the same PostgreSQL transaction
 - handle duplicate checkout events through `orders.cart_id` idempotency
 - initialize the Redis snapshot, status, timeline, and active/scheduled membership after commit
 
@@ -97,7 +151,9 @@ DLT publish failure policy:
 
 This prevents losing a checkout event that was neither processed successfully nor stored in the DLT.
 
-Kafka producers for business events and the delivery-arrival consumer are not implemented yet.
+Direct Kafka producers for business events are intentionally not implemented.
+Produced order business events are written to `outbox_event` for Debezium
+publishing. The delivery-arrival consumer is not implemented yet.
 
 Concurrent checkout creation is guarded by `order:lock:{cartId}`. If another service instance already holds that lock, processing fails with a retryable exception so Spring Kafka can redeliver the record according to the configured retry policy. Duplicate checkout creation is still protected at the database level by the unique `orders.cart_id` index. `OrderCreationService` also returns the existing order when the cart id has already been processed.
 

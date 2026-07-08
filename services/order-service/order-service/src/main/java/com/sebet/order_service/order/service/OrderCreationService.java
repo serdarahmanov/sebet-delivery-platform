@@ -6,6 +6,7 @@ import com.sebet.order_service.cache.service.OrderCreationRedisWriter;
 import com.sebet.order_service.order.command.CreateOrderCommand;
 import com.sebet.order_service.order.command.CreateOrderItemCommand;
 import com.sebet.order_service.order.command.CreateOrderResult;
+import com.sebet.order_service.order.event.OrderEventOutboxWriter;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
@@ -37,6 +38,7 @@ public class OrderCreationService {
     private final OrderItemRepository orderItemRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
     private final OrderCreationRedisWriter orderCreationRedisWriter;
+    private final OrderEventOutboxWriter orderEventOutboxWriter;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -86,6 +88,7 @@ public class OrderCreationService {
                 .createdAt(now)
                 .build());
 
+        orderEventOutboxWriter.saveOrderCreated(order);
         registerRedisInitialization(order);
         return new CreateOrderResult(order, true);
     }

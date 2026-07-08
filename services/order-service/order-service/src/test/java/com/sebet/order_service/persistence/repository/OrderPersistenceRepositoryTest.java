@@ -3,6 +3,7 @@ package com.sebet.order_service.persistence.repository;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
+import com.sebet.order_service.persistence.entity.OutboxEventEntity;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ProductUnit;
 import com.sebet.order_service.shared.enums.ScheduleType;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
@@ -57,6 +59,12 @@ class OrderPersistenceRepositoryTest {
 
     @Autowired
     private OrderStatusHistoryRepository orderStatusHistoryRepository;
+
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private EntityManager entityManager;
@@ -260,6 +268,88 @@ class OrderPersistenceRepositoryTest {
 
         assertThatThrownBy(() -> orderRepository.saveAndFlush(secondOrder))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void savesOutboxEventPayloadAsQueryableJsonb() {
+        UUID eventId = UUID.randomUUID();
+        OffsetDateTime occurredAt = OffsetDateTime.parse("2026-07-08T10:00:00Z");
+
+        outboxEventRepository.saveAndFlush(OutboxEventEntity.builder()
+                .id(eventId)
+                .aggregateType("Order")
+                .aggregateId("order-1")
+                .eventType("OrderCreated")
+                .eventKey("order-1")
+                .payload("""
+                        {
+                          "eventId": "%s",
+                          "eventType": "OrderCreated",
+                          "aggregateId": "order-1",
+                          "aggregateType": "Order",
+                          "version": 1,
+                          "occurredAt": "2026-07-08T10:00:00Z",
+                          "source": "order-service",
+                          "data": {
+                            "orderId": "order-1",
+                            "status": "PENDING"
+                          }
+                        }
+                        """.formatted(eventId))
+                .headers("{\"traceId\":\"trace-1\"}")
+                .occurredAt(occurredAt)
+                .build());
+
+        entityManager.clear();
+
+        OutboxEventEntity savedEvent = outboxEventRepository.findById(eventId).orElseThrow();
+        assertThat(savedEvent.getAggregateType()).isEqualTo("Order");
+        assertThat(savedEvent.getEventKey()).isEqualTo("order-1");
+        assertThat(savedEvent.getOccurredAt()).isEqualTo(occurredAt);
+
+        String eventType = jdbcTemplate.queryForObject(
+                "select payload ->> 'eventType' from outbox_event where id = ?",
+                String.class,
+                eventId
+        );
+        String orderId = jdbcTemplate.queryForObject(
+                "select payload #>> '{data,orderId}' from outbox_event where id = ?",
+                String.class,
+                eventId
+        );
+        assertThat(eventType).isEqualTo("OrderCreated");
+        assertThat(orderId).isEqualTo("order-1");
+    }
+
+    @Test
+    void outboxEventRequiresCoreColumns() {
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                        insert into outbox_event (
+                            id, aggregate_id, event_type, event_key, payload, occurred_at
+                        ) values (?, ?, ?, ?, ?::jsonb, ?)
+                        """,
+                UUID.randomUUID(),
+                "order-1",
+                "OrderCreated",
+                "order-1",
+                "{}",
+                OffsetDateTime.parse("2026-07-08T10:00:00Z")
+        )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void outboxEventMigrationCreatesExpectedIndexes() {
+        List<String> indexNames = jdbcTemplate.queryForList(
+                "select indexname from pg_indexes where schemaname = 'public' and tablename = 'outbox_event'",
+                String.class
+        );
+
+        assertThat(indexNames).contains(
+                "outbox_event_pkey",
+                "idx_outbox_event_aggregate",
+                "idx_outbox_event_event_type_created_at",
+                "idx_outbox_event_created_at"
+        );
     }
 
     @Test

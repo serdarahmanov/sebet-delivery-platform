@@ -11,8 +11,10 @@ Implemented:
 - Redis repository classes.
 - Redis Lua script beans for lock release and active-set cleanup.
 - JPA entities for orders, order items, and order status history.
+- JPA entity for Debezium outbox events.
 - Spring Data JPA repositories.
 - Flyway migration `V1__create_order_tables.sql`.
+- Flyway migration `V2__create_outbox_event_table.sql`.
 - JSONB mapping for the delivery address snapshot and status metadata.
 - Unique `orders.cart_id` idempotency constraint.
 - Unique per-order `order_items.line_number` constraint.
@@ -75,6 +77,7 @@ The current durable schema stores:
 - `orders`: durable order header, optimistic lock version, cart id, customer/store ids, status, schedule fields, totals, discounts, delivery address snapshot, coordinates, cancellation fields, driver assignment fields (`driver_id`, `driver_assigned_at`), and timestamps.
 - `order_items`: durable item snapshots with product, quantity, unit, pricing, discount, image URL, and line number.
 - `order_status_history`: append-style status transition records.
+- `outbox_event`: append-only order business events for Debezium publication.
 
 Important constraints and indexes:
 
@@ -86,6 +89,10 @@ Important constraints and indexes:
 - `order_items(order_id, product_id)` unique index.
 - `order_status_history.order_id` foreign key to `orders.id` with cascade delete.
 - customer/store history indexes on `(customer_id, created_at desc)` and `(store_id, created_at desc)`.
+- `outbox_event.id` primary key used as the event id.
+- `outbox_event.event_key` stores the Kafka key, currently the order id.
+- `outbox_event.payload` stores the canonical event envelope as queryable `jsonb`.
+- outbox indexes on `(aggregate_type, aggregate_id)`, `(event_type, created_at)`, and `created_at`.
 
 Delivery address is stored as `jsonb` because it is a checkout-time snapshot owned by the order. Coordinates are stored as explicit numeric columns for easier querying and mapping.
 

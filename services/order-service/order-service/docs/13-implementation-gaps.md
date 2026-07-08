@@ -77,11 +77,12 @@ Implemented:
 - Kafka retry/DLT integration coverage for retryable, non-retryable, malformed payload, partition/key preservation, and DLT publish failure paths
 - Redis lock integration for checkout event handling
 - Redis hot-view initialization for created orders from current database state
+- order-created and lifecycle event outbox writes for Debezium publishing
 
 Pending:
 
 - delivery arrival consumer
-- order event publisher
+- Debezium connector deployment/runtime wiring
 
 ## Background Jobs
 

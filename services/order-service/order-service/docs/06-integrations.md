@@ -14,7 +14,7 @@ Source topic:
 checkout-events
 ```
 
-Order-service consumes this event, guards order creation with `order:lock:{cartId}`, creates the durable order, and initializes Redis hot views after the transaction commits from the current database order state. Order-created/status publishing is still pending.
+Order-service consumes this event, guards order creation with `order:lock:{cartId}`, creates the durable order, writes an order-created outbox event in the same database transaction, and initializes Redis hot views after the transaction commits from the current database order state. Debezium runtime deployment is still pending.
 
 ## Delivery Service
 
@@ -90,4 +90,4 @@ Store clients use:
 
 ## Integration Status
 
-The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, and `ready` actions are implemented through the shared lifecycle service. Driver lifecycle write actions (`pickup`, `arrive`, `complete`) are implemented through `DriverOrderLifecycleService`. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. The remaining store write methods, driver detail and decline, and all internal service methods are pending. The delivery-arrival Kafka consumer, order event publishers, and WebSocket broker are pending.
+The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, and `ready` actions are implemented through the shared lifecycle service. Driver lifecycle write actions (`pickup`, `arrive`, `complete`) are implemented through `DriverOrderLifecycleService`. Order-created and lifecycle business events are written to `outbox_event` for Debezium publishing. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. The remaining store write methods, driver detail and decline, and all internal service methods are pending. The delivery-arrival Kafka consumer, Debezium runtime deployment, and WebSocket broker are pending.

@@ -25,6 +25,8 @@ Before complete deployment, the service will need:
 - Redis
 - Kafka
 - Kafka topic configuration
+- Kafka Connect with Debezium PostgreSQL connector
+- Debezium outbox connector configuration
 - production profile activation
 - health/metrics exposure settings
 
@@ -49,6 +51,25 @@ Expected categories:
 - consumed topic names
 - produced topic names
 - checkout retry and DLT settings
+- Debezium connector database host/user/password/slot/publication settings
+
+## Debezium Outbox Connector
+
+Order business events are written to `outbox_event` and published by Debezium,
+not by this Spring Boot process. The sample connector configuration is:
+
+```text
+debezium/order-service-outbox-connector.json
+```
+
+The connector contract is documented in [Debezium Outbox](14-debezium-outbox.md).
+Before enabling it, provision:
+
+- Kafka Connect worker with Debezium PostgreSQL connector installed
+- `order-events` topic
+- PostgreSQL logical decoding enabled
+- replication slot/publication strategy for `public.outbox_event`
+- Debezium database user with required replication and table privileges
 
 ## Deployment Work Remaining
 
@@ -57,6 +78,9 @@ Expected categories:
 - Add Kubernetes manifest or Helm values.
 - Add readiness and liveness probe configuration.
 - Add observability configuration.
+- Add managed Debezium connector deployment/secrets for each environment.
+- Add outbox cleanup CronJob or equivalent platform job with Kafka Connect
+  health and PostgreSQL replication lag checks.
 
 ## Operational Rule
 

@@ -12,7 +12,7 @@ Cart-service owns cart checkout confirmation and emits a checkout event after re
 
 Create orders by consuming `CheckoutConfirmedEvent` from Kafka.
 
-The checkout consumer, event DTOs, mapper, order creation service integration, retry/DLT handling, and Redis checkout lock are implemented. Order-created/status event publishing is still pending.
+The checkout consumer, event DTOs, mapper, order creation service integration, retry/DLT handling, Redis checkout lock, and order-created/status outbox writes are implemented. Debezium runtime deployment is still pending.
 
 ## Consequences
 

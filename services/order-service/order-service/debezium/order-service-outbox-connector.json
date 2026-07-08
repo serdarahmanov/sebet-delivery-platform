@@ -1,0 +1,39 @@
+{
+  "name": "order-service-outbox",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+
+    "database.hostname": "${ORDER_SERVICE_DB_HOST}",
+    "database.port": "${ORDER_SERVICE_DB_PORT}",
+    "database.user": "${ORDER_SERVICE_DEBEZIUM_USER}",
+    "database.password": "${ORDER_SERVICE_DEBEZIUM_PASSWORD}",
+    "database.dbname": "${ORDER_SERVICE_DB_NAME}",
+
+    "topic.prefix": "order-service",
+    "plugin.name": "pgoutput",
+    "slot.name": "order_service_outbox",
+    "publication.name": "order_service_outbox_pub",
+    "publication.autocreate.mode": "filtered",
+    "table.include.list": "public.outbox_event",
+    "snapshot.mode": "no_data",
+    "include.schema.changes": "false",
+    "tombstones.on.delete": "false",
+
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.id": "id",
+    "transforms.outbox.table.field.event.key": "event_key",
+    "transforms.outbox.table.field.event.payload": "payload",
+    "transforms.outbox.table.field.event.timestamp": "occurred_at",
+    "transforms.outbox.table.expand.json.payload": "true",
+    "transforms.outbox.route.by.field": "aggregate_type",
+    "transforms.outbox.route.topic.replacement": "order-events",
+    "transforms.outbox.route.tombstone.on.empty.payload": "false",
+    "transforms.outbox.table.fields.additional.placement": "event_type:header:eventType,aggregate_type:header:aggregateType,aggregate_id:header:aggregateId"
+  }
+}

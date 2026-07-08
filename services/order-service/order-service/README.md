@@ -4,7 +4,7 @@ Spring Boot order lifecycle microservice for the Sebet delivery platform.
 
 The service is designed to receive checkout confirmations from cart-service, create orders, expose customer and store order APIs, maintain Redis-backed hot order views, and support live tracking through WebSocket/STOMP (planned).
 
-The current codebase contains the API/DTO/cache skeleton, durable order persistence, Flyway schema migration, repository tests, an internal order creation service, checkout-event-to-command mapping, Kafka retry/DLT handling, a Kafka checkout-event consumer, Redis locking around checkout order creation, Redis hot-view writes during order creation, customer read services, store read services, store lifecycle write endpoints (accept, reject, ready), driver lifecycle write endpoints (pickup, arrive, complete), and a global exception handler with consistent error responses. WebSocket broker, remaining REST write service implementations (customer writes, store cancel/propose, driver detail/decline, all internal endpoints), and order event producers are still pending.
+The current codebase contains the API/DTO/cache skeleton, durable order persistence, Flyway schema migration, repository tests, an internal order creation service, checkout-event-to-command mapping, Kafka retry/DLT handling, a Kafka checkout-event consumer, Redis locking around checkout order creation, Redis hot-view writes during order creation, order event outbox writes for Debezium publishing, customer read services, store read services, store lifecycle write endpoints (accept, reject, ready), driver lifecycle write endpoints (pickup, arrive, complete), and a global exception handler with consistent error responses. WebSocket broker, remaining REST write service implementations (customer writes, store cancel/propose, driver detail/decline, all internal endpoints), and Debezium connector deployment/runtime wiring are still pending.
 
 ## Tech Stack
 
@@ -93,6 +93,7 @@ service can run as a complete order processor.
 - [Deployment](docs/11-deployment.md)
 - [Observability](docs/12-observability.md)
 - [Implementation Gaps](docs/13-implementation-gaps.md)
+- [Debezium Outbox](docs/14-debezium-outbox.md)
 - [Architecture Decisions](docs/adr)
 
 ## Documentation Rules

@@ -1,6 +1,7 @@
 package com.sebet.order_service.order.service;
 
 import com.sebet.order_service.cache.service.OrderLifecycleRedisUpdater;
+import com.sebet.order_service.order.event.OrderEventOutboxWriter;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
 import com.sebet.order_service.persistence.repository.OrderRepository;
@@ -32,6 +33,7 @@ public class OrderLifecycleService {
     private final OrderRepository orderRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
     private final OrderLifecycleRedisUpdater orderLifecycleRedisUpdater;
+    private final OrderEventOutboxWriter orderEventOutboxWriter;
 
     @Transactional
     public OrderLifecycleResult storeAccept(String orderId, String storeId) {
@@ -160,6 +162,16 @@ public class OrderLifecycleService {
                 .createdAt(changedAt)
                 .build());
 
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                targetStatus,
+                changedAt,
+                ACTOR_DRIVER,
+                driverId,
+                reason,
+                metadataJson
+        );
         registerRedisUpdate(savedOrder, targetStatus, changedAt);
         return new OrderLifecycleResult(savedOrder, previousStatus, targetStatus, changedAt);
     }
@@ -204,6 +216,16 @@ public class OrderLifecycleService {
                 .createdAt(changedAt)
                 .build());
 
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                targetStatus,
+                changedAt,
+                ACTOR_STORE,
+                storeId,
+                reason,
+                metadataJson
+        );
         registerRedisUpdate(savedOrder, targetStatus, changedAt);
         return new OrderLifecycleResult(savedOrder, previousStatus, targetStatus, changedAt);
     }

@@ -1,5 +1,7 @@
 package com.sebet.order_service.order.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.cache.repository.ActiveOrdersRedisRepository;
 import com.sebet.order_service.cache.repository.OrderRedisRepository;
 import com.sebet.order_service.cache.repository.OrderStatusRedisRepository;
@@ -13,9 +15,11 @@ import com.sebet.order_service.order.command.CreateOrderResult;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
+import com.sebet.order_service.persistence.entity.OutboxEventEntity;
 import com.sebet.order_service.persistence.repository.OrderItemRepository;
 import com.sebet.order_service.persistence.repository.OrderRepository;
 import com.sebet.order_service.persistence.repository.OrderStatusHistoryRepository;
+import com.sebet.order_service.persistence.repository.OutboxEventRepository;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ProductUnit;
 import com.sebet.order_service.shared.enums.ScheduleType;
@@ -71,6 +75,9 @@ class OrderCreationServiceTest {
     private OrderCreationService orderCreationService;
 
     @Autowired
+    private OrderLifecycleService orderLifecycleService;
+
+    @Autowired
     private OrderRepository orderRepository;
 
     @Autowired
@@ -78,6 +85,9 @@ class OrderCreationServiceTest {
 
     @Autowired
     private OrderStatusHistoryRepository orderStatusHistoryRepository;
+
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
 
     @Autowired
     private OrderRedisRepository orderRedisRepository;
@@ -100,8 +110,12 @@ class OrderCreationServiceTest {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @BeforeEach
     void clearState() {
+        outboxEventRepository.deleteAll();
         orderStatusHistoryRepository.deleteAll();
         orderItemRepository.deleteAll();
         orderRepository.deleteAll();
@@ -112,7 +126,7 @@ class OrderCreationServiceTest {
     }
 
     @Test
-    void createsImmediateOrderAsPending() {
+    void createsImmediateOrderAsPending() throws Exception {
         CreateOrderCommand command = command("cart-immediate-1", ScheduleType.IMMEDIATE, null);
 
         CreateOrderResult result = orderCreationService.createOrder(command);
@@ -169,6 +183,10 @@ class OrderCreationServiceTest {
         assertThat(activeOrdersRedisRepository.contains("customer-1", savedOrder.getId().toString())).isTrue();
         assertThat(storeActiveOrdersRedisRepository.contains("store-1", savedOrder.getId().toString())).isTrue();
         assertThat(storeScheduledOrdersRedisRepository.contains("store-1", savedOrder.getId().toString())).isFalse();
+
+        assertThat(outboxEventRepository.findAll())
+                .singleElement()
+                .satisfies(event -> assertOrderCreatedOutboxEvent(event, savedOrder));
     }
 
     @Test
@@ -230,6 +248,9 @@ class OrderCreationServiceTest {
         assertThat(orderTimelineRedisRepository.findAll(firstResult.order().getId().toString())).hasSize(1);
         assertThat(activeOrdersRedisRepository.count("customer-1")).isEqualTo(1L);
         assertThat(storeActiveOrdersRedisRepository.count("store-1")).isEqualTo(1L);
+        assertThat(outboxEventRepository.findAll())
+                .extracting(OutboxEventEntity::getEventType)
+                .containsExactly("OrderCreated");
     }
 
     @Test
@@ -322,6 +343,51 @@ class OrderCreationServiceTest {
         assertThat(storeScheduledOrdersRedisRepository.contains("store-1", orderId)).isFalse();
     }
 
+    @Test
+    void storeAcceptPersistsOrderHistoryAndOutboxEvent() throws Exception {
+        CreateOrderResult creationResult = orderCreationService.createOrder(
+                command("cart-lifecycle-outbox-1", ScheduleType.IMMEDIATE, null)
+        );
+        OrderEntity createdOrder = creationResult.order();
+        outboxEventRepository.deleteAll();
+
+        OrderLifecycleResult lifecycleResult =
+                orderLifecycleService.storeAccept(createdOrder.getId().toString(), "store-1");
+
+        OrderEntity savedOrder = orderRepository.findById(createdOrder.getId()).orElseThrow();
+        assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+
+        assertThat(orderStatusHistoryRepository.findByOrderIdOrderByCreatedAtAsc(savedOrder.getId()))
+                .extracting(OrderStatusHistoryEntity::getToStatus)
+                .containsExactly(OrderStatus.PENDING, OrderStatus.CONFIRMED);
+
+        assertThat(outboxEventRepository.findAll())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.getAggregateType()).isEqualTo("Order");
+                    assertThat(event.getAggregateId()).isEqualTo(savedOrder.getId().toString());
+                    assertThat(event.getEventType()).isEqualTo("OrderAccepted");
+                    assertThat(event.getEventKey()).isEqualTo(savedOrder.getId().toString());
+                    assertThat(event.getOccurredAt().toInstant())
+                            .isCloseTo(lifecycleResult.changedAt().toInstant(), within(1, ChronoUnit.MILLIS));
+
+                    try {
+                        JsonNode payload = objectMapper.readTree(event.getPayload());
+                        assertThat(payload.path("eventId").asText()).isEqualTo(event.getId().toString());
+                        assertThat(payload.path("eventType").asText()).isEqualTo("OrderAccepted");
+                        assertThat(payload.path("aggregateId").asText()).isEqualTo(savedOrder.getId().toString());
+                        assertThat(payload.path("version").asLong()).isEqualTo(savedOrder.getVersion() + 1L);
+                        assertThat(payload.path("data").path("previousStatus").asText()).isEqualTo("PENDING");
+                        assertThat(payload.path("data").path("newStatus").asText()).isEqualTo("CONFIRMED");
+                        assertThat(payload.path("data").path("changedByType").asText()).isEqualTo("STORE");
+                        assertThat(payload.path("data").path("changedById").asText()).isEqualTo("store-1");
+                        assertThat(payload.path("data").path("reason").asText()).isEqualTo("STORE_ACCEPTED");
+                    } catch (Exception exception) {
+                        throw new AssertionError("Failed to parse status changed outbox payload", exception);
+                    }
+                });
+    }
+
     private CreateOrderCommand command(String cartId, ScheduleType scheduleType, OffsetDateTime scheduledFor) {
         return new CreateOrderCommand(
                 cartId,
@@ -365,5 +431,31 @@ class OrderCreationServiceTest {
                         )
                 )
         );
+    }
+
+    private void assertOrderCreatedOutboxEvent(OutboxEventEntity event, OrderEntity order) {
+        assertThat(event.getAggregateType()).isEqualTo("Order");
+        assertThat(event.getAggregateId()).isEqualTo(order.getId().toString());
+        assertThat(event.getEventType()).isEqualTo("OrderCreated");
+        assertThat(event.getEventKey()).isEqualTo(order.getId().toString());
+        assertThat(event.getOccurredAt().toInstant())
+                .isCloseTo(order.getCreatedAt().toInstant(), within(1, ChronoUnit.MILLIS));
+
+        try {
+            JsonNode payload = objectMapper.readTree(event.getPayload());
+            assertThat(payload.path("eventId").asText()).isEqualTo(event.getId().toString());
+            assertThat(payload.path("eventType").asText()).isEqualTo("OrderCreated");
+            assertThat(payload.path("aggregateId").asText()).isEqualTo(order.getId().toString());
+            assertThat(payload.path("aggregateType").asText()).isEqualTo("Order");
+            assertThat(payload.path("version").asLong()).isEqualTo(1L);
+            assertThat(payload.path("source").asText()).isEqualTo("order-service");
+            assertThat(payload.path("data").path("orderId").asText()).isEqualTo(order.getId().toString());
+            assertThat(payload.path("data").path("cartId").asText()).isEqualTo(order.getCartId());
+            assertThat(payload.path("data").path("status").asText()).isEqualTo(OrderStatus.PENDING.name());
+            assertThat(payload.path("data").path("totalAmount").decimalValue())
+                    .isEqualByComparingTo(order.getTotalAmount());
+        } catch (Exception exception) {
+            throw new AssertionError("Failed to parse outbox event payload", exception);
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.sebet.order_service.order.service;
 
 import com.sebet.order_service.cache.service.OrderLifecycleRedisUpdater;
+import com.sebet.order_service.order.event.OrderEventOutboxWriter;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
 import com.sebet.order_service.persistence.repository.OrderRepository;
@@ -34,11 +35,13 @@ class OrderLifecycleServiceTest {
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final OrderStatusHistoryRepository orderStatusHistoryRepository = mock(OrderStatusHistoryRepository.class);
     private final OrderLifecycleRedisUpdater orderLifecycleRedisUpdater = mock(OrderLifecycleRedisUpdater.class);
+    private final OrderEventOutboxWriter orderEventOutboxWriter = mock(OrderEventOutboxWriter.class);
 
     private final OrderLifecycleService service = new OrderLifecycleService(
             orderRepository,
             orderStatusHistoryRepository,
-            orderLifecycleRedisUpdater
+            orderLifecycleRedisUpdater,
+            orderEventOutboxWriter
     );
 
     @Test
@@ -69,6 +72,16 @@ class OrderLifecycleServiceTest {
                 OrderStatus.CONFIRMED,
                 result.changedAt().toString()
         );
+        verify(orderEventOutboxWriter).saveOrderStatusTransition(
+                order,
+                OrderStatus.PENDING,
+                OrderStatus.CONFIRMED,
+                result.changedAt(),
+                "STORE",
+                "store-1",
+                "STORE_ACCEPTED",
+                null
+        );
     }
 
     @Test
@@ -98,6 +111,16 @@ class OrderLifecycleServiceTest {
                 order,
                 OrderStatus.CANCELLED,
                 result.changedAt().toString()
+        );
+        verify(orderEventOutboxWriter).saveOrderStatusTransition(
+                order,
+                OrderStatus.PENDING,
+                OrderStatus.CANCELLED,
+                result.changedAt(),
+                "STORE",
+                "store-1",
+                "OUT_OF_STOCK",
+                null
         );
     }
 
@@ -132,6 +155,8 @@ class OrderLifecycleServiceTest {
         verify(orderRepository, never()).saveAndFlush(any());
         verify(orderStatusHistoryRepository, never()).save(any());
         verify(orderLifecycleRedisUpdater, never()).applyTransition(any(), any(), any());
+        verify(orderEventOutboxWriter, never()).saveOrderStatusTransition(
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -161,6 +186,8 @@ class OrderLifecycleServiceTest {
 
         verify(orderStatusHistoryRepository, never()).save(any());
         verify(orderLifecycleRedisUpdater, never()).applyTransition(any(), any(), any());
+        verify(orderEventOutboxWriter, never()).saveOrderStatusTransition(
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -199,6 +226,16 @@ class OrderLifecycleServiceTest {
 
         verify(orderLifecycleRedisUpdater).applyTransition(
                 order, OrderStatus.OUT_FOR_DELIVERY, result.changedAt().toString());
+        verify(orderEventOutboxWriter).saveOrderStatusTransition(
+                order,
+                OrderStatus.READY_FOR_PICKUP,
+                OrderStatus.OUT_FOR_DELIVERY,
+                result.changedAt(),
+                "DRIVER",
+                "driver-1",
+                "DRIVER_PICKED_UP",
+                null
+        );
     }
 
     @Test
@@ -217,6 +254,16 @@ class OrderLifecycleServiceTest {
         verify(orderStatusHistoryRepository).save(historyCaptor.capture());
         assertThat(historyCaptor.getValue().getMetadataJson()).isEqualTo("{\"code\":\"07\"}");
         assertThat(historyCaptor.getValue().getReason()).isEqualTo("DRIVER_ARRIVED");
+        verify(orderEventOutboxWriter).saveOrderStatusTransition(
+                order,
+                OrderStatus.OUT_FOR_DELIVERY,
+                OrderStatus.ARRIVED,
+                result.changedAt(),
+                "DRIVER",
+                "driver-1",
+                "DRIVER_ARRIVED",
+                "{\"code\":\"07\"}"
+        );
     }
 
     @Test
