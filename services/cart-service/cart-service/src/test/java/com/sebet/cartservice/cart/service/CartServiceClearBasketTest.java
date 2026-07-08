@@ -15,13 +15,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.Optional;
-import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -37,21 +36,16 @@ class CartServiceClearBasketTest {
     @Mock
     private CartResponseBuilder cartResponseBuilder;
     @Mock
-    private CartLockService cartLockService;
-    @Mock
     private CartMetrics cartMetrics;
     @Mock
     private StoreBasketCacheService storeBasketCacheService;
     @InjectMocks
     private CartService cartService;
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     @BeforeEach
-    void stubLock() {
-        lenient().doAnswer(inv -> ((Supplier) inv.getArgument(1)).get())
-                .when(cartLockService).withLock(anyString(), any(Supplier.class));
-        lenient().doAnswer(inv -> { ((Runnable) inv.getArgument(1)).run(); return null; })
-                .when(cartLockService).withLock(anyString(), any(Runnable.class));
+    void stubVersionedSave() {
+        lenient().when(cartRedisRepository.saveIfVersionMatches(anyString(), any(RedisCart.class), anyLong()))
+                .thenReturn(true);
     }
 
     @Test
@@ -72,7 +66,7 @@ class CartServiceClearBasketTest {
         cartService.clearBasket("u1", basketId);
 
         ArgumentCaptor<RedisCart> captor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), captor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), captor.capture(), anyLong());
         RedisCart saved = captor.getValue();
 
         assertThat(saved.getItems()).noneMatch(item -> "store-1".equals(item.getStoreId()));
@@ -93,7 +87,7 @@ class CartServiceClearBasketTest {
         String wrongBasketId = cart.getCartId() + ":store-999";
         cartService.clearBasket("u1", wrongBasketId);
 
-        verify(cartRedisRepository, never()).save(eq("u1"), any(RedisCart.class));
+        verify(cartRedisRepository, never()).saveIfVersionMatches(eq("u1"), any(RedisCart.class), anyLong());
     }
 
     @Test
@@ -106,6 +100,6 @@ class CartServiceClearBasketTest {
         // Raw storeId without cartId prefix — resolveStoreIdFromBasketId returns null
         cartService.clearBasket("u1", "store-1");
 
-        verify(cartRedisRepository, never()).save(eq("u1"), any(RedisCart.class));
+        verify(cartRedisRepository, never()).saveIfVersionMatches(eq("u1"), any(RedisCart.class), anyLong());
     }
 }

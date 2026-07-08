@@ -26,13 +26,12 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,19 +46,16 @@ class CartServiceApplyPromoCodeTest {
     @Mock
     private CartResponseBuilder cartResponseBuilder;
     @Mock
-    private CartLockService cartLockService;
-    @Mock
     private CartMetrics cartMetrics;
     @Mock
     private StoreBasketCacheService storeBasketCacheService;
     @InjectMocks
     private CartService cartService;
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     @BeforeEach
-    void stubLock() {
-        lenient().doAnswer(inv -> ((Supplier) inv.getArgument(1)).get())
-                .when(cartLockService).withLock(anyString(), any(Supplier.class));
+    void stubVersionedSave() {
+        lenient().when(cartRedisRepository.saveIfVersionMatches(anyString(), any(RedisCart.class), anyLong()))
+                .thenReturn(true);
     }
 
     @Test
@@ -75,7 +71,7 @@ class CartServiceApplyPromoCodeTest {
         cartService.applyPromoCode("u1", "store-1", new ApplyPromoCodeRequest("NEW20"));
 
         ArgumentCaptor<RedisCart> cartCaptor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), cartCaptor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), cartCaptor.capture(), anyLong());
         RedisCart saved = cartCaptor.getValue();
 
         assertThat(saved.getPromoCodes()).hasSize(2);

@@ -20,6 +20,7 @@ import com.sebet.cartservice.cart.model.cart_calculation.StoreBasketCalculation;
 import com.sebet.cartservice.cart.model.cart_validation.CartValidationResult;
 import com.sebet.cartservice.cart.model.cart_validation.CartValidationResult.ProductStoreKey;
 import com.sebet.cartservice.cart.model.cart_validation.ProductSnapshot;
+import com.sebet.cartservice.cart.model.cart_validation.StoreSnapshot;
 import com.sebet.cartservice.cart.model.redis.RedisCart;
 import com.sebet.cartservice.cart.model.redis.RedisCartItem;
 import com.sebet.cartservice.cart.model.redis.RedisDeliveryQuote;
@@ -30,10 +31,12 @@ import com.sebet.cartservice.cart.service.*;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,6 +62,9 @@ public class CheckoutService {
     private final Executor checkoutExecutor;
     private final CartMetrics cartMetrics;
     private final StoreBasketCacheService storeBasketCacheService;
+
+    @Value("${app.fees.currency:UZS}")
+    private String defaultCurrency;
 
     public CheckoutService(
             CartRedisRepository cartRedisRepository,
@@ -164,7 +170,18 @@ public class CheckoutService {
                 return CheckoutConfirmResponse.rejected(blockingIssues);
             }
 
-            CheckoutConfirmedEvent event = buildEvent(cart, basket, storeId, userId, basketId, validationResult);
+            CartCalculationResult calculationResult =
+                    cartCalculationService.calculate(cart, validationResult, Set.of(storeId));
+
+            CheckoutConfirmedEvent event = buildEvent(
+                    cart,
+                    basket,
+                    storeId,
+                    userId,
+                    basketId,
+                    validationResult,
+                    calculationResult
+            );
 
             // CAS save BEFORE publishing the event.
             // If the publish were first and the CAS save failed (409 conflict), the
@@ -482,14 +499,19 @@ public class CheckoutService {
             String storeId,
             String userId,
             String basketId,
-            CartValidationResult validationResult
+            CartValidationResult validationResult,
+            CartCalculationResult calculationResult
     ) {
         Instant now = Instant.now();
+        StoreBasketCalculation basketCalculation = calculationResult.storeBasketCalculationsByStoreId().get(storeId);
+        StoreSnapshot storeSnapshot = validationResult.storesByStoreId().get(storeId);
 
         List<CheckoutConfirmedEvent.Item> items = basket.getItems().stream()
                 .map(item -> {
                     ProductSnapshot snapshot = validationResult.productsByProductStore()
                             .get(new ProductStoreKey(item.getProductId(), item.getStoreId()));
+                    ItemCalculation calculation = calculationResult.itemCalculationsByCartItemId()
+                            .get(item.getCartItemId());
                     return new CheckoutConfirmedEvent.Item(
                             item.getCartItemId(),
                             item.getProductId(),
@@ -497,8 +519,12 @@ public class CheckoutService {
                             snapshot != null ? snapshot.sku() : null,
                             snapshot != null ? snapshot.name() : null,
                             snapshot != null && snapshot.unit() != null ? snapshot.unit().name() : null,
-                            item.getQuantity(),
-                            snapshot != null ? snapshot.currentPrice() : null,
+                            calculation != null ? calculation.quantity() : item.getQuantity(),
+                            toLong(calculation != null ? calculation.unitPrice()
+                                    : snapshot != null ? snapshot.currentPrice() : null),
+                            toLong(calculation != null ? calculation.subtotal() : null),
+                            toLong(calculation != null ? calculation.itemDiscountTotal() : null),
+                            toLong(calculation != null ? calculation.finalTotal() : null),
                             snapshot != null ? snapshot.imageUrl() : null
                     );
                 })
@@ -510,6 +536,43 @@ public class CheckoutService {
         String activeQuoteId = basket.getDeliveryQuote() != null
                 ? basket.getDeliveryQuote().getQuoteId()
                 : null;
+        String currency = basket.getDeliveryQuote() != null && basket.getDeliveryQuote().getCurrency() != null
+                ? basket.getDeliveryQuote().getCurrency()
+                : defaultCurrency;
+        BigDecimal orderDiscountAmount = safe(basketCalculation != null ? basketCalculation.promoDiscountTotal() : null)
+                .add(safe(basketCalculation != null ? basketCalculation.freeDeliveryDiscount() : null));
+
+        CheckoutConfirmedEvent.Money money = new CheckoutConfirmedEvent.Money(
+                toLong(basketCalculation != null ? basketCalculation.itemsSubtotal() : null),
+                toLong(basketCalculation != null ? basketCalculation.itemDiscountTotal() : null),
+                toLong(orderDiscountAmount),
+                toLong(basketCalculation != null ? basketCalculation.deliveryFee() : null),
+                toLong(basketCalculation != null ? basketCalculation.serviceFee() : null),
+                0L,
+                toLong(basketCalculation != null ? basketCalculation.basketTotal() : null),
+                currency
+        );
+
+        CheckoutConfirmedEvent.DeliveryAddress deliveryAddress = new CheckoutConfirmedEvent.DeliveryAddress(
+                basket.getAddressId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        CheckoutConfirmedEvent.StoreLocation storeLocation = new CheckoutConfirmedEvent.StoreLocation(
+                storeId,
+                storeSnapshot != null ? storeSnapshot.name() : null,
+                null,
+                null,
+                null
+        );
 
         CheckoutConfirmedEvent.Data data = new CheckoutConfirmedEvent.Data(
                 basketId,
@@ -518,6 +581,9 @@ public class CheckoutService {
                 userId,
                 basket.getAddressId(),
                 activeQuoteId,
+                money,
+                deliveryAddress,
+                storeLocation,
                 items,
                 basket.getSelectedPromoCodeStrings(),
                 scheduleType,
@@ -528,11 +594,23 @@ public class CheckoutService {
         return new CheckoutConfirmedEvent(
                 UUID.randomUUID().toString(),
                 "CheckoutConfirmed",
+                1,
                 cart.getCartId(),
                 "Cart",
                 now,
                 "cart-service",
                 data
         );
+    }
+
+    private BigDecimal safe(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private Long toLong(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(0, RoundingMode.HALF_UP).longValue();
     }
 }

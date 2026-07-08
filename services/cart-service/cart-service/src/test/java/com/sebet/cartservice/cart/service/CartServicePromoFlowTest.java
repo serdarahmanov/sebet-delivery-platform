@@ -28,15 +28,14 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -52,19 +51,16 @@ class CartServicePromoFlowTest {
     @Mock
     private CartResponseBuilder cartResponseBuilder;
     @Mock
-    private CartLockService cartLockService;
-    @Mock
     private CartMetrics cartMetrics;
     @Mock
     private StoreBasketCacheService storeBasketCacheService;
     @InjectMocks
     private CartService cartService;
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     @BeforeEach
-    void stubLock() {
-        doAnswer(inv -> ((Supplier) inv.getArgument(1)).get())
-                .when(cartLockService).withLock(anyString(), any(Supplier.class));
+    void stubVersionedSave() {
+        lenient().when(cartRedisRepository.saveIfVersionMatches(anyString(), any(RedisCart.class), anyLong()))
+                .thenReturn(true);
     }
 
     @Test
@@ -80,7 +76,7 @@ class CartServicePromoFlowTest {
         cartService.claimPromoCode("u1", "store-1", new ClaimPromoCodeRequest("WELCOME10"));
 
         ArgumentCaptor<RedisCart> captor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), captor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), captor.capture(), anyLong());
         RedisCart saved = captor.getValue();
         assertThat(saved.getPromoCodes()).hasSize(1);
         assertThat(saved.getPromoCodes().get(0).getCode()).isEqualTo("WELCOME10");
@@ -108,7 +104,7 @@ class CartServicePromoFlowTest {
 
         cartService.claimPromoCode("u1", "store-1", new ClaimPromoCodeRequest("BAD"));
 
-        verify(cartRedisRepository, times(0)).save(eq("u1"), any(RedisCart.class));
+        verify(cartRedisRepository, times(0)).saveIfVersionMatches(eq("u1"), any(RedisCart.class), anyLong());
         assertThat(cart.getPromoCodes()).isEmpty();
     }
 
@@ -148,7 +144,7 @@ class CartServicePromoFlowTest {
         cartService.applyPromoCodes("u1", "store-1", request);
 
         ArgumentCaptor<RedisCart> captor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), captor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), captor.capture(), anyLong());
         RedisCart saved = captor.getValue();
         var savedW = saved.getPromoCodes().stream()
                 .filter(p -> "WELCOME10".equals(p.getCode())).findFirst().orElseThrow();
@@ -174,7 +170,7 @@ class CartServicePromoFlowTest {
         cartService.deletePromoCode("u1", "store-1", "WELCOME10");
 
         ArgumentCaptor<RedisCart> captor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), captor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), captor.capture(), anyLong());
         assertThat(captor.getValue().getPromoCodes())
                 .allMatch(p -> !"WELCOME10".equals(p.getCode()));
     }

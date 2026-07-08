@@ -9,6 +9,7 @@ import java.util.List;
 public record CheckoutConfirmedEvent(
         String eventId,
         String eventType,
+        Integer eventVersion,
         String aggregateId,
         String aggregateType,
         Instant occurredAt,
@@ -19,9 +20,12 @@ public record CheckoutConfirmedEvent(
             String basketId,
             String cartId,
             String storeId,
-            String userId,
+            String customerId,
             String addressId,
             String feeQuoteId,
+            Money money,
+            DeliveryAddress deliveryAddress,
+            StoreLocation storeLocation,
             List<Item> items,
             List<String> selectedPromoCodes,
             ScheduleType scheduleType,
@@ -29,15 +33,50 @@ public record CheckoutConfirmedEvent(
             Instant confirmedAt
     ) {}
 
+    public record Money(
+            Long subtotalAmount,
+            Long itemDiscountAmount,
+            Long orderDiscountAmount,
+            Long deliveryFeeAmount,
+            Long serviceFeeAmount,
+            Long smallOrderFeeAmount,
+            Long totalAmount,
+            String currency
+    ) {}
+
+    public record DeliveryAddress(
+            String addressId,
+            String label,
+            String street,
+            String city,
+            BigDecimal lat,
+            BigDecimal lng,
+            String apartment,
+            String entrance,
+            String floor,
+            String note
+    ) {}
+
+    public record StoreLocation(
+            String storeId,
+            String storeName,
+            BigDecimal lat,
+            BigDecimal lng,
+            String address
+    ) {}
+
     public record Item(
             String cartItemId,
             String productId,
             String storeId,
             String sku,
-            String name,
+            String productName,
             String unit,
             BigDecimal quantity,
-            BigDecimal unitPrice,
+            Long unitPriceAmount,
+            Long grossAmount,
+            Long discountAmount,
+            Long netAmount,
             String imageUrl
     ) {}
 }

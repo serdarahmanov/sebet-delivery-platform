@@ -18,13 +18,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -40,19 +39,16 @@ class CartServiceBatchUpsertItemsTest {
     @Mock
     private CartResponseBuilder cartResponseBuilder;
     @Mock
-    private CartLockService cartLockService;
-    @Mock
     private CartMetrics cartMetrics;
     @Mock
     private StoreBasketCacheService storeBasketCacheService;
     @InjectMocks
     private CartService cartService;
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     @BeforeEach
-    void stubLock() {
-        lenient().doAnswer(inv -> ((Supplier) inv.getArgument(1)).get())
-                .when(cartLockService).withLock(anyString(), any(Supplier.class));
+    void stubVersionedSave() {
+        lenient().when(cartRedisRepository.saveIfVersionMatches(anyString(), any(RedisCart.class), anyLong()))
+                .thenReturn(true);
     }
 
     @Test
@@ -67,7 +63,7 @@ class CartServiceBatchUpsertItemsTest {
         )));
 
         ArgumentCaptor<RedisCart> captor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), captor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), captor.capture(), anyLong());
         RedisCartItem item = captor.getValue().getItems().get(0);
         assertThat(item.getQuantity()).isEqualByComparingTo("2");
     }
@@ -84,7 +80,7 @@ class CartServiceBatchUpsertItemsTest {
         )));
 
         ArgumentCaptor<RedisCart> captor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), captor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), captor.capture(), anyLong());
         assertThat(captor.getValue().getItems())
                 .anyMatch(i -> "store-1".equals(i.getStoreId())
                         && "milk-1".equals(i.getProductId())
@@ -105,7 +101,7 @@ class CartServiceBatchUpsertItemsTest {
         )));
 
         ArgumentCaptor<RedisCart> captor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), captor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), captor.capture(), anyLong());
         assertThat(captor.getValue().getItems())
                 .anyMatch(i -> "bread-1".equals(i.getProductId()) && "store-1".equals(i.getStoreId()));
     }
@@ -125,7 +121,7 @@ class CartServiceBatchUpsertItemsTest {
         )));
 
         ArgumentCaptor<RedisCart> captor = ArgumentCaptor.forClass(RedisCart.class);
-        verify(cartRedisRepository).save(eq("u1"), captor.capture());
+        verify(cartRedisRepository).saveIfVersionMatches(eq("u1"), captor.capture(), anyLong());
         RedisCart saved = captor.getValue();
         assertThat(saved.getItems()).anyMatch(i -> "store-1".equals(i.getStoreId())
                 && "apple-1".equals(i.getProductId())
@@ -144,7 +140,7 @@ class CartServiceBatchUpsertItemsTest {
         )));
 
         // First save: new empty cart; second save: cart with the item
-        verify(cartRedisRepository, times(2)).save(eq("u1"), any(RedisCart.class));
+        verify(cartRedisRepository, times(2)).saveIfVersionMatches(eq("u1"), any(RedisCart.class), anyLong());
         assertThat(result.basketIds()).hasSize(1);
         assertThat(result.basketIds().get(0)).contains("store-1");
     }
