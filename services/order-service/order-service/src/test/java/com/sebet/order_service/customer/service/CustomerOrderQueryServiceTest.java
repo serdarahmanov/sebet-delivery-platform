@@ -229,7 +229,7 @@ class CustomerOrderQueryServiceTest {
         assertThat(result.storeId()).isEqualTo("store-1");
         assertThat(result.items()).hasSize(1);
         assertThat(result.items().get(0).productId()).isEqualTo("product-1");
-        assertThat(result.timeline()).hasSize(4);
+        assertThat(result.timeline()).hasSize(5);
         assertThat(result.timeline().get(0).status()).isEqualTo("PLACED");
         assertThat(result.timeline().get(0).occurredAt()).isEqualTo("2026-07-06T10:00:00Z");
         assertThat(result.timeline().get(1).occurredAt()).isNull();
@@ -625,7 +625,7 @@ class CustomerOrderQueryServiceTest {
 
         ActiveOrderDetailResponse result = service.getActiveOrderDetail("user-1", orderId);
 
-        assertThat(result.timeline()).hasSize(4);
+        assertThat(result.timeline()).hasSize(5);
         assertThat(result.timeline().get(0).status()).isEqualTo("PLACED");
         assertThat(result.timeline().get(0).occurredAt()).isEqualTo("2026-07-06T10:00:00Z");
         assertThat(result.timeline().get(1).status()).isEqualTo("PACKED");
@@ -634,6 +634,8 @@ class CustomerOrderQueryServiceTest {
         assertThat(result.timeline().get(2).occurredAt()).isNull();
         assertThat(result.timeline().get(3).status()).isEqualTo("ARRIVED");
         assertThat(result.timeline().get(3).occurredAt()).isNull();
+        assertThat(result.timeline().get(4).status()).isEqualTo("DELIVERED");
+        assertThat(result.timeline().get(4).occurredAt()).isNull();
     }
 
     @Test
@@ -654,13 +656,15 @@ class CustomerOrderQueryServiceTest {
         CustomerOrderRouterResult result = service.routeOrderDetail("user-1", id.toString());
 
         CustomerOrderRouterResult.Delivered delivered = (CustomerOrderRouterResult.Delivered) result;
-        assertThat(delivered.response().timeline()).hasSize(4);
+        assertThat(delivered.response().timeline()).hasSize(5);
         assertThat(delivered.response().timeline().get(0).status()).isEqualTo("PLACED");
         assertThat(delivered.response().timeline().get(0).occurredAt()).isNotNull();
         assertThat(delivered.response().timeline().get(1).status()).isEqualTo("PACKED");
         assertThat(delivered.response().timeline().get(2).status()).isEqualTo("ON_THE_WAY");
         assertThat(delivered.response().timeline().get(3).status()).isEqualTo("ARRIVED");
-        assertThat(delivered.response().timeline().get(3).occurredAt()).isNotNull();
+        assertThat(delivered.response().timeline().get(3).occurredAt()).isNull();
+        assertThat(delivered.response().timeline().get(4).status()).isEqualTo("DELIVERED");
+        assertThat(delivered.response().timeline().get(4).occurredAt()).isNotNull();
     }
 
     // ── orderNumber format ────────────────────────────────────────────────────
@@ -708,7 +712,7 @@ class CustomerOrderQueryServiceTest {
         e.setStoreId("store-1");
         e.setCartId("cart-1");
         e.setStatus(status);
-        e.setScheduleType(ScheduleType.IMMEDIATE);
+        e.setScheduleType(ScheduleType.ASAP);
         e.setSubtotalAmount(new BigDecimal("33000.00"));
         e.setItemDiscountAmount(BigDecimal.ZERO);
         e.setOrderDiscountAmount(BigDecimal.ZERO);

@@ -98,6 +98,25 @@ class OrderLifecycleRedisUpdaterTest {
         verify(orderTimelineRedisRepository).delete(orderId);
     }
 
+    @Test
+    void deliveredTransitionAppendsDeliveredTimelineAndClearsHotViews() {
+        OrderEntity order = order();
+        String orderId = order.getId().toString();
+
+        updater.applyTransition(order, OrderStatus.DELIVERED, "2026-07-07T10:15:00Z");
+
+        verify(activeOrdersRedisRepository).remove("customer-1", orderId);
+        verify(storeActiveOrdersRedisRepository).remove("store-1", orderId);
+        verify(orderRedisRepository).delete(orderId);
+        verify(orderTrackingRedisRepository).delete(orderId);
+        verify(verificationCodeRedisRepository).delete(orderId);
+        verify(orderStatusRedisRepository).save(orderId, "customer-1", "store-1", "DELIVERED");
+        verify(orderTimelineRedisRepository).append(
+                orderId,
+                new OrderTimelineEntry("DELIVERED", "2026-07-07T10:15:00Z")
+        );
+    }
+
     private OrderEntity order() {
         OffsetDateTime now = OffsetDateTime.now();
         return OrderEntity.builder()
@@ -106,7 +125,7 @@ class OrderLifecycleRedisUpdaterTest {
                 .storeId("store-1")
                 .cartId("cart-1")
                 .status(OrderStatus.PENDING)
-                .scheduleType(ScheduleType.IMMEDIATE)
+                .scheduleType(ScheduleType.ASAP)
                 .subtotalAmount(new BigDecimal("33000.00"))
                 .itemDiscountAmount(BigDecimal.ZERO)
                 .orderDiscountAmount(BigDecimal.ZERO)

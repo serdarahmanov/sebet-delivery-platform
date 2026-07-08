@@ -49,11 +49,11 @@ public record StoreOrderDetailResponse(
 
         /** ISO-8601 order placement timestamp. */
         String createdAt,
-        /** ISO-8601 estimated delivery timestamp; null for immediate orders before dispatch. */
+        /** ISO-8601 estimated delivery timestamp; null for ASAP orders before dispatch. */
         String estimatedDeliveryAt,
 
         /**
-         * Full 4-step progress timeline.
+         * Full 5-step progress timeline.
          * Steps not yet reached have {@code occurredAt == null}.
          * Source: Cache 6 for active orders, DB for historical.
          */

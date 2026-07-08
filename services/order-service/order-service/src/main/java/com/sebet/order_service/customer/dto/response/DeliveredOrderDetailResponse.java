@@ -35,7 +35,7 @@ public record DeliveredOrderDetailResponse(
         String deliveredAt,
 
         /**
-         * Complete 4-step timeline — all steps filled with timestamps.
+         * Complete 5-step timeline — all steps filled with timestamps.
          * Source: DB (order_status_history table).
          * Shown on the receipt screen as a read-only history strip.
          */

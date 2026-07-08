@@ -117,7 +117,7 @@ class OrderEventOutboxWriterTest {
                 .storeId("store-1")
                 .cartId("cart-1")
                 .status(status)
-                .scheduleType(status == OrderStatus.SCHEDULED ? ScheduleType.SCHEDULED : ScheduleType.IMMEDIATE)
+                .scheduleType(status == OrderStatus.SCHEDULED ? ScheduleType.SCHEDULED : ScheduleType.ASAP)
                 .scheduledFor(status == OrderStatus.SCHEDULED ? now.plusHours(2) : null)
                 .subtotalAmount(new BigDecimal("33000.00"))
                 .itemDiscountAmount(BigDecimal.ZERO)

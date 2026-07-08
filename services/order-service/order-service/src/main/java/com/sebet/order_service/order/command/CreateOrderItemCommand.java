@@ -14,7 +14,8 @@ public record CreateOrderItemCommand(
         BigDecimal grossAmount,
         BigDecimal discountAmount,
         BigDecimal netAmount,
-        String imageUrl
+        String imageUrl,
+        String sku
 ) {
 
     public CreateOrderItemCommand {

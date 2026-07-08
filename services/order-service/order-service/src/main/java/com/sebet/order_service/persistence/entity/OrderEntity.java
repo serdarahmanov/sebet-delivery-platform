@@ -23,6 +23,7 @@ import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -83,17 +84,30 @@ public class OrderEntity {
     @JdbcTypeCode(SqlTypes.JSON)
     private String deliveryAddressJson;
 
-    @Column(nullable = false, precision = 9, scale = 6)
+    @Column(precision = 9, scale = 6)
     private BigDecimal deliveryLat;
 
-    @Column(nullable = false, precision = 9, scale = 6)
+    @Column(precision = 9, scale = 6)
     private BigDecimal deliveryLng;
 
-    @Column(precision = 9, scale = 6)
+    @Column(nullable = false, precision = 9, scale = 6)
     private BigDecimal storeLat;
 
-    @Column(precision = 9, scale = 6)
+    @Column(nullable = false, precision = 9, scale = 6)
     private BigDecimal storeLng;
+
+    @Column(length = 100)
+    private String feeQuoteId;
+
+    @Column(nullable = false, columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private List<String> selectedPromoCodes;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal serviceFeeAmount;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal smallOrderFeeAmount;
 
     @Column(length = 64)
     private String driverId;

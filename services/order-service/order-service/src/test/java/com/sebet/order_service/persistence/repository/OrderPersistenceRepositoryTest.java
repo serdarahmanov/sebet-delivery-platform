@@ -4,6 +4,7 @@ import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
 import com.sebet.order_service.persistence.entity.OutboxEventEntity;
+import com.sebet.order_service.persistence.entity.ProcessedEventEntity;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ProductUnit;
 import com.sebet.order_service.shared.enums.ScheduleType;
@@ -62,6 +63,9 @@ class OrderPersistenceRepositoryTest {
 
     @Autowired
     private OutboxEventRepository outboxEventRepository;
+
+    @Autowired
+    private ProcessedEventRepository processedEventRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -353,6 +357,59 @@ class OrderPersistenceRepositoryTest {
     }
 
     @Test
+    void savesProcessedEventAndRejectsDuplicateEventId() {
+        UUID eventId = UUID.randomUUID();
+        OffsetDateTime occurredAt = OffsetDateTime.parse("2026-07-08T12:00:00Z");
+
+        processedEventRepository.saveAndFlush(ProcessedEventEntity.builder()
+                .eventId(eventId)
+                .eventType("CheckoutConfirmed")
+                .occurredAt(occurredAt)
+                .build());
+
+        entityManager.clear();
+
+        ProcessedEventEntity saved = processedEventRepository.findById(eventId).orElseThrow();
+        assertThat(saved.getEventType()).isEqualTo("CheckoutConfirmed");
+        assertThat(saved.getProcessedAt()).isNotNull();
+        assertThat(saved.getOccurredAt()).isEqualTo(occurredAt);
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                        insert into processed_events (event_id, event_type, occurred_at)
+                        values (?, ?, ?)
+                        """,
+                eventId,
+                "CheckoutConfirmed",
+                occurredAt
+        )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void processedEventRequiresEventType() {
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                        insert into processed_events (event_id, event_type, occurred_at)
+                        values (?, ?, ?)
+                        """,
+                UUID.randomUUID(),
+                null,
+                OffsetDateTime.parse("2026-07-08T12:00:00Z")
+        )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void processedEventMigrationCreatesExpectedIndexes() {
+        List<String> indexNames = jdbcTemplate.queryForList(
+                "select indexname from pg_indexes where schemaname = 'public' and tablename = 'processed_events'",
+                String.class
+        );
+
+        assertThat(indexNames).contains(
+                "processed_events_pkey",
+                "idx_processed_events_event_type_processed_at"
+        );
+    }
+
+    @Test
     void deletingOrderCascadesToItemsAndStatusHistory() {
         OrderEntity order = orderRepository.saveAndFlush(newOrder(
                 UUID.randomUUID(),
@@ -402,11 +459,13 @@ class OrderPersistenceRepositoryTest {
                 .storeId(storeId)
                 .cartId("cart-" + orderId)
                 .status(status)
-                .scheduleType(ScheduleType.IMMEDIATE)
+                .scheduleType(ScheduleType.ASAP)
                 .subtotalAmount(new BigDecimal("33000.00"))
                 .itemDiscountAmount(new BigDecimal("2000.00"))
                 .orderDiscountAmount(new BigDecimal("3000.00"))
                 .deliveryFeeAmount(new BigDecimal("8000.00"))
+                .serviceFeeAmount(BigDecimal.ZERO)
+                .smallOrderFeeAmount(BigDecimal.ZERO)
                 .totalAmount(new BigDecimal("36000.00"))
                 .currency("UZS")
                 .deliveryAddressJson("{\"street\":\"Amir Temur 25\",\"city\":\"Tashkent\"}")
@@ -414,6 +473,7 @@ class OrderPersistenceRepositoryTest {
                 .deliveryLng(new BigDecimal("69.279700"))
                 .storeLat(new BigDecimal("41.320100"))
                 .storeLng(new BigDecimal("69.240500"))
+                .selectedPromoCodes(List.of())
                 .createdAt(createdAt)
                 .updatedAt(createdAt)
                 .build();

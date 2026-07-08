@@ -142,7 +142,7 @@ class CustomerOrderQueryServiceIntegrationTest {
         assertThat(result.orderId()).isEqualTo(orderId);
         assertThat(result.status()).isEqualTo(OrderStatus.PENDING);
         assertThat(result.items()).hasSize(2);
-        assertThat(result.timeline()).hasSize(4);
+        assertThat(result.timeline()).hasSize(5);
         assertThat(result.timeline().get(0).status()).isEqualTo("PLACED");
         assertThat(result.timeline().get(0).occurredAt()).isNotNull();
         assertThat(result.timeline().get(1).occurredAt()).isNull();
@@ -190,10 +190,12 @@ class CustomerOrderQueryServiceIntegrationTest {
         CustomerOrderRouterResult.Delivered delivered = (CustomerOrderRouterResult.Delivered) result;
         assertThat(delivered.response().orderId()).isEqualTo(order.getId().toString());
         assertThat(delivered.response().deliveredAt()).isNotNull();
-        assertThat(delivered.response().timeline()).hasSize(4);
+        assertThat(delivered.response().timeline()).hasSize(5);
         assertThat(delivered.response().timeline().get(0).status()).isEqualTo("PLACED");
         assertThat(delivered.response().timeline().get(3).status()).isEqualTo("ARRIVED");
-        assertThat(delivered.response().timeline().get(3).occurredAt()).isNotNull();
+        assertThat(delivered.response().timeline().get(3).occurredAt()).isNull();
+        assertThat(delivered.response().timeline().get(4).status()).isEqualTo("DELIVERED");
+        assertThat(delivered.response().timeline().get(4).occurredAt()).isNotNull();
     }
 
     @Test
@@ -302,12 +304,14 @@ class CustomerOrderQueryServiceIntegrationTest {
                 cartId,
                 customerId,
                 "store-1",
-                ScheduleType.IMMEDIATE,
+                ScheduleType.ASAP,
                 null,
                 new BigDecimal("33000.00"),
                 new BigDecimal("2000.00"),
                 new BigDecimal("3000.00"),
                 new BigDecimal("8000.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
                 new BigDecimal("36000.00"),
                 "UZS",
                 "{\"street\":\"Amir Temur 25\",\"city\":\"Tashkent\"}",
@@ -315,6 +319,8 @@ class CustomerOrderQueryServiceIntegrationTest {
                 new BigDecimal("69.279700"),
                 new BigDecimal("41.320100"),
                 new BigDecimal("69.240500"),
+                null,
+                List.of(),
                 List.of(
                         new CreateOrderItemCommand(
                                 "product-1", "Apples",
@@ -323,7 +329,8 @@ class CustomerOrderQueryServiceIntegrationTest {
                                 new BigDecimal("24000.00"),
                                 new BigDecimal("2000.00"),
                                 new BigDecimal("22000.00"),
-                                "https://cdn.sebet.test/products/apple.png"
+                                "https://cdn.sebet.test/products/apple.png",
+                                null
                         ),
                         new CreateOrderItemCommand(
                                 "product-2", "Milk",
@@ -332,6 +339,7 @@ class CustomerOrderQueryServiceIntegrationTest {
                                 new BigDecimal("9000.00"),
                                 BigDecimal.ZERO,
                                 new BigDecimal("9000.00"),
+                                null,
                                 null
                         )
                 )
@@ -349,6 +357,8 @@ class CustomerOrderQueryServiceIntegrationTest {
                 new BigDecimal("2000.00"),
                 new BigDecimal("3000.00"),
                 new BigDecimal("8000.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
                 new BigDecimal("36000.00"),
                 "UZS",
                 "{\"street\":\"Amir Temur 25\",\"city\":\"Tashkent\"}",
@@ -356,6 +366,8 @@ class CustomerOrderQueryServiceIntegrationTest {
                 new BigDecimal("69.279700"),
                 new BigDecimal("41.320100"),
                 new BigDecimal("69.240500"),
+                null,
+                List.of(),
                 List.of(
                         new CreateOrderItemCommand(
                                 "product-1", "Apples",
@@ -364,7 +376,8 @@ class CustomerOrderQueryServiceIntegrationTest {
                                 new BigDecimal("24000.00"),
                                 new BigDecimal("2000.00"),
                                 new BigDecimal("22000.00"),
-                                "https://cdn.sebet.test/products/apple.png"
+                                "https://cdn.sebet.test/products/apple.png",
+                                null
                         ),
                         new CreateOrderItemCommand(
                                 "product-2", "Milk",
@@ -373,6 +386,7 @@ class CustomerOrderQueryServiceIntegrationTest {
                                 new BigDecimal("9000.00"),
                                 BigDecimal.ZERO,
                                 new BigDecimal("9000.00"),
+                                null,
                                 null
                         )
                 )

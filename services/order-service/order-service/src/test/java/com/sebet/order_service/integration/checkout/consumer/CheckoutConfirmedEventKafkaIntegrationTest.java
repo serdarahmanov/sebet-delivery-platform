@@ -1,9 +1,6 @@
 package com.sebet.order_service.integration.checkout.consumer;
 
-import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedEvent;
-import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedItem;
-import com.sebet.order_service.integration.checkout.event.CheckoutDeliveryAddress;
-import com.sebet.order_service.integration.checkout.event.CheckoutStoreLocation;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.cache.dto.OrderTimelineEntry;
 import com.sebet.order_service.cache.repository.ActiveOrdersRedisRepository;
 import com.sebet.order_service.cache.repository.OrderRedisRepository;
@@ -11,6 +8,9 @@ import com.sebet.order_service.cache.repository.OrderStatusRedisRepository;
 import com.sebet.order_service.cache.repository.OrderTimelineRedisRepository;
 import com.sebet.order_service.cache.repository.StoreActiveOrdersRedisRepository;
 import com.sebet.order_service.cache.repository.StoreScheduledOrdersRedisRepository;
+import com.sebet.order_service.integration.checkout.CheckoutEventTestFactory;
+import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedPayload;
+import com.sebet.order_service.integration.checkout.event.IntegrationEvent;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
@@ -18,8 +18,6 @@ import com.sebet.order_service.persistence.repository.OrderItemRepository;
 import com.sebet.order_service.persistence.repository.OrderRepository;
 import com.sebet.order_service.persistence.repository.OrderStatusHistoryRepository;
 import com.sebet.order_service.shared.enums.OrderStatus;
-import com.sebet.order_service.shared.enums.ProductUnit;
-import com.sebet.order_service.shared.enums.ScheduleType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -35,7 +33,6 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -76,7 +73,7 @@ class CheckoutConfirmedEventKafkaIntegrationTest {
         registry.add("spring.kafka.producer.key-serializer",
                 () -> "org.apache.kafka.common.serialization.StringSerializer");
         registry.add("spring.kafka.producer.value-serializer",
-                () -> "org.springframework.kafka.support.serializer.JsonSerializer");
+                () -> "org.apache.kafka.common.serialization.StringSerializer");
         registry.add("order-service.internal.secret", () -> "test-internal-secret");
         registry.add("order-service.kafka.checkout-events.topic", () -> TOPIC);
         registry.add("order-service.kafka.checkout-events.group-id", () -> "order-service-it");
@@ -84,7 +81,10 @@ class CheckoutConfirmedEventKafkaIntegrationTest {
     }
 
     @Autowired
-    private KafkaTemplate<String, CheckoutConfirmedEvent> kafkaTemplate;
+    private KafkaTemplate<String, String> kafkaTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private OrderRepository orderRepository;
@@ -115,12 +115,12 @@ class CheckoutConfirmedEventKafkaIntegrationTest {
 
     @Test
     void consumesCheckoutConfirmedEventFromKafkaAndCreatesOrder() throws Exception {
-        CheckoutConfirmedEvent event = checkoutEvent("cart-kafka-it-1");
+        IntegrationEvent<CheckoutConfirmedPayload> event = CheckoutEventTestFactory.checkoutEvent("cart-kafka-it-1");
 
-        kafkaTemplate.send(TOPIC, event.cartId(), event).get(10, TimeUnit.SECONDS);
+        kafkaTemplate.send(TOPIC, event.data().cartId(), objectMapper.writeValueAsString(event)).get(10, TimeUnit.SECONDS);
         kafkaTemplate.flush();
 
-        OrderEntity order = awaitOrderByCartId(event.cartId(), Duration.ofSeconds(15));
+        OrderEntity order = awaitOrderByCartId(event.data().cartId(), Duration.ofSeconds(15));
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(order.getCustomerId()).isEqualTo("customer-1");
@@ -171,60 +171,6 @@ class CheckoutConfirmedEventKafkaIntegrationTest {
         }
         fail("Timed out waiting for order with cartId " + cartId);
         throw new IllegalStateException("unreachable");
-    }
-
-    private CheckoutConfirmedEvent checkoutEvent(String cartId) {
-        return new CheckoutConfirmedEvent(
-                cartId,
-                "customer-1",
-                "store-1",
-                ScheduleType.IMMEDIATE,
-                null,
-                new BigDecimal("33000.00"),
-                new BigDecimal("2000.00"),
-                new BigDecimal("3000.00"),
-                new BigDecimal("8000.00"),
-                new BigDecimal("36000.00"),
-                "UZS",
-                new CheckoutDeliveryAddress(
-                        "Amir Temur 25",
-                        "Tashkent",
-                        new BigDecimal("41.311100"),
-                        new BigDecimal("69.279700"),
-                        "42",
-                        "2",
-                        "5",
-                        "Call before arrival"
-                ),
-                new CheckoutStoreLocation(
-                        new BigDecimal("41.320100"),
-                        new BigDecimal("69.240500")
-                ),
-                List.of(
-                        new CheckoutConfirmedItem(
-                                "product-1",
-                                "Apples",
-                                new BigDecimal("2.000"),
-                                ProductUnit.KG,
-                                new BigDecimal("12000.00"),
-                                new BigDecimal("24000.00"),
-                                new BigDecimal("2000.00"),
-                                new BigDecimal("22000.00"),
-                                "https://cdn.sebet.test/products/apple.png"
-                        ),
-                        new CheckoutConfirmedItem(
-                                "product-2",
-                                "Milk",
-                                new BigDecimal("1.000"),
-                                ProductUnit.PCS,
-                                new BigDecimal("9000.00"),
-                                new BigDecimal("9000.00"),
-                                BigDecimal.ZERO,
-                                new BigDecimal("9000.00"),
-                                null
-                        )
-                )
-        );
     }
 
 }

@@ -52,7 +52,11 @@ Planned (not yet enforced by handler):
 
 ## Input Validation
 
-Amount fields (`subtotalAmount`, `itemDiscountAmount`, `orderDiscountAmount`, `deliveryFeeAmount`, `totalAmount`) are validated as `>= 0` in the compact constructors of `CheckoutConfirmedEvent` and `CreateOrderCommand`. Invalid values throw `IllegalArgumentException`, which the global handler maps to `400 VALIDATION_ERROR`.
+Checkout envelope fields are validated in `CheckoutConfirmedHandler` before order creation. The handler rejects missing event ids, unsupported event type/version, wrong aggregate metadata, missing money/address/store snapshots, empty items, and invalid schedule rules.
+
+`CreateOrderCommand` validates internal order creation invariants such as required identifiers, required money fields, and `scheduledFor` consistency. Invalid values throw `IllegalArgumentException`, which the global handler maps to `400 VALIDATION_ERROR` for REST paths and the Kafka error handler routes to retry/DLT behavior for listener paths.
+
+For checkout events, `processed_events` is recorded only after order creation and post-commit Redis initialization both succeed. That keeps cache-repair replays possible if Redis fails after the database commit.
 
 `deliveryAddressJson` is validated as parseable JSON in `OrderCreationService.createNewOrder()` before any database write. An unparseable value throws `IllegalArgumentException`, preventing a later `IllegalStateException` in `OrderCreationRedisWriter`.
 

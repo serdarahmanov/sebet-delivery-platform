@@ -12,6 +12,9 @@ Current durable order fields include:
 - store id
 - order items
 - item-level and order-level pricing discounts
+- service fee and small-order fee amounts
+- fee quote id
+- selected promo codes
 - delivery address JSON snapshot
 - delivery and store coordinates
 - schedule type
@@ -41,7 +44,7 @@ Order items are stored as durable snapshots under `order_items`.
 
 Each item stores:
 
-- product id and product name
+- product id, product name, and SKU
 - quantity and product unit
 - unit price
 - gross amount
@@ -162,7 +165,8 @@ Customer timeline is a simplified view of internal status:
 | `PENDING` | `PLACED` |
 | `READY_FOR_PICKUP` | `PACKED` |
 | `OUT_FOR_DELIVERY` | `ON_THE_WAY` |
-| `DELIVERED` | `ARRIVED` |
+| `ARRIVED` | `ARRIVED` |
+| `DELIVERED` | `DELIVERED` |
 
 `CONFIRMED` means the store accepted the order and is preparing it. It does not
 advance the customer timeline to `PACKED`.

@@ -222,7 +222,7 @@ class StoreOrderQueryServiceTest {
         assertThat(result.status()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(result.items()).hasSize(1);
         assertThat(result.cancellation()).isNotNull();
-        assertThat(result.timeline()).hasSize(4);
+        assertThat(result.timeline()).hasSize(5);
         assertThat(result.timeline().get(0).occurredAt()).isNotNull();
     }
 
@@ -328,7 +328,7 @@ class StoreOrderQueryServiceTest {
         order.setStoreId("store-1");
         order.setCartId("cart-1");
         order.setStatus(status);
-        order.setScheduleType(status == OrderStatus.SCHEDULED ? ScheduleType.SCHEDULED : ScheduleType.IMMEDIATE);
+        order.setScheduleType(status == OrderStatus.SCHEDULED ? ScheduleType.SCHEDULED : ScheduleType.ASAP);
         order.setScheduledFor(status == OrderStatus.SCHEDULED ? now.plusDays(1) : null);
         order.setSubtotalAmount(new BigDecimal("33000.00"));
         order.setItemDiscountAmount(BigDecimal.ZERO);

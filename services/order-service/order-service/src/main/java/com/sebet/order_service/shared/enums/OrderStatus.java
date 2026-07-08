@@ -24,7 +24,8 @@ package com.sebet.order_service.shared.enums;
  *   PENDING                           → PLACED
  *   READY_FOR_PICKUP                  → PACKED
  *   OUT_FOR_DELIVERY                  → ON_THE_WAY
- *   DELIVERED                         → ARRIVED
+ *   ARRIVED                           → ARRIVED
+ *   DELIVERED                         → DELIVERED
  */
 public enum OrderStatus {
 

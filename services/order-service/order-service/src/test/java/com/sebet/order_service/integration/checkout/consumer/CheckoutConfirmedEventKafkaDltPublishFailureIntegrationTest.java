@@ -1,14 +1,12 @@
 package com.sebet.order_service.integration.checkout.consumer;
 
-import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedEvent;
-import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedItem;
-import com.sebet.order_service.integration.checkout.event.CheckoutDeliveryAddress;
-import com.sebet.order_service.integration.checkout.event.CheckoutStoreLocation;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.cache.repository.OrderLockRedisRepository;
+import com.sebet.order_service.integration.checkout.CheckoutEventTestFactory;
+import com.sebet.order_service.integration.checkout.event.CheckoutConfirmedPayload;
+import com.sebet.order_service.integration.checkout.event.IntegrationEvent;
 import com.sebet.order_service.order.command.CreateOrderCommand;
 import com.sebet.order_service.order.service.OrderCreationService;
-import com.sebet.order_service.shared.enums.ProductUnit;
-import com.sebet.order_service.shared.enums.ScheduleType;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -34,8 +32,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
-import java.math.BigDecimal;
-import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
@@ -78,7 +74,7 @@ class CheckoutConfirmedEventKafkaDltPublishFailureIntegrationTest {
         registry.add("spring.kafka.producer.key-serializer",
                 () -> "org.apache.kafka.common.serialization.StringSerializer");
         registry.add("spring.kafka.producer.value-serializer",
-                () -> "org.springframework.kafka.support.serializer.JsonSerializer");
+                () -> "org.apache.kafka.common.serialization.StringSerializer");
         registry.add("order-service.internal.secret", () -> "test-internal-secret");
         registry.add("order-service.kafka.checkout-events.topic", () -> TOPIC);
         registry.add("order-service.kafka.checkout-events.group-id", () -> GROUP_ID);
@@ -91,7 +87,10 @@ class CheckoutConfirmedEventKafkaDltPublishFailureIntegrationTest {
     }
 
     @Autowired
-    private KafkaTemplate<String, CheckoutConfirmedEvent> kafkaTemplate;
+    private KafkaTemplate<String, String> kafkaTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
@@ -113,14 +112,16 @@ class CheckoutConfirmedEventKafkaDltPublishFailureIntegrationTest {
 
     @Test
     void doesNotCommitSourceOffsetWhenDltPublishFails() throws Exception {
-        CheckoutConfirmedEvent event = checkoutEvent("cart-kafka-it-dlt-publish-fails");
+        IntegrationEvent<CheckoutConfirmedPayload> event =
+                CheckoutEventTestFactory.checkoutEvent("cart-kafka-it-dlt-publish-fails");
         when(orderCreationService.createOrder(any(CreateOrderCommand.class)))
                 .thenThrow(new IllegalStateException("database temporarily unavailable"));
         doThrow(new IllegalStateException("DLT broker unavailable"))
                 .when(deadLetterPublishingRecoverer)
                 .accept(any(ConsumerRecord.class), any(Consumer.class), any(Exception.class));
 
-        kafkaTemplate.send(TOPIC, 1, event.cartId(), event).get(10, TimeUnit.SECONDS);
+        kafkaTemplate.send(TOPIC, 1, event.data().cartId(), objectMapper.writeValueAsString(event))
+                .get(10, TimeUnit.SECONDS);
         kafkaTemplate.flush();
 
         verify(orderCreationService, timeout(10_000).atLeast(2))
@@ -152,47 +153,6 @@ class CheckoutConfirmedEventKafkaDltPublishFailureIntegrationTest {
                     .get(topicPartition);
             return committed == null ? null : committed.offset();
         }
-    }
-
-    private CheckoutConfirmedEvent checkoutEvent(String cartId) {
-        return new CheckoutConfirmedEvent(
-                cartId,
-                "customer-1",
-                "store-1",
-                ScheduleType.IMMEDIATE,
-                null,
-                new BigDecimal("33000.00"),
-                new BigDecimal("2000.00"),
-                new BigDecimal("3000.00"),
-                new BigDecimal("8000.00"),
-                new BigDecimal("36000.00"),
-                "UZS",
-                new CheckoutDeliveryAddress(
-                        "Amir Temur 25",
-                        "Tashkent",
-                        new BigDecimal("41.311100"),
-                        new BigDecimal("69.279700"),
-                        "42",
-                        "2",
-                        "5",
-                        "Call before arrival"
-                ),
-                new CheckoutStoreLocation(
-                        new BigDecimal("41.320100"),
-                        new BigDecimal("69.240500")
-                ),
-                List.of(new CheckoutConfirmedItem(
-                        "product-1",
-                        "Apples",
-                        new BigDecimal("2.000"),
-                        ProductUnit.KG,
-                        new BigDecimal("12000.00"),
-                        new BigDecimal("24000.00"),
-                        new BigDecimal("2000.00"),
-                        new BigDecimal("22000.00"),
-                        "https://cdn.sebet.test/products/apple.png"
-                ))
-        );
     }
 
     @TestConfiguration

@@ -256,7 +256,7 @@ class DriverOrderLifecycleServiceTest {
                 .driverId("driver-1")
                 .cartId("cart-1")
                 .status(to)
-                .scheduleType(ScheduleType.IMMEDIATE)
+                .scheduleType(ScheduleType.ASAP)
                 .subtotalAmount(new BigDecimal("33000.00"))
                 .itemDiscountAmount(BigDecimal.ZERO)
                 .orderDiscountAmount(BigDecimal.ZERO)

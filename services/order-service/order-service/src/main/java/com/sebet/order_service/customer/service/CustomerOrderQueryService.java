@@ -71,13 +71,14 @@ public class CustomerOrderQueryService {
             EnumSet.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.SCHEDULED);
 
     private static final List<String> TIMELINE_STEPS =
-            List.of("PLACED", "PACKED", "ON_THE_WAY", "ARRIVED");
+            List.of("PLACED", "PACKED", "ON_THE_WAY", "ARRIVED", "DELIVERED");
 
     private static final Map<String, String> STEP_LABELS = Map.of(
             "PLACED", "Placed",
             "PACKED", "Packed",
             "ON_THE_WAY", "On the way",
-            "ARRIVED", "Arrived"
+            "ARRIVED", "Arrived",
+            "DELIVERED", "Delivered"
     );
 
     private final OrderRedisRepository orderRedisRepository;
@@ -359,7 +360,8 @@ public class CustomerOrderQueryService {
             case PENDING -> "PLACED";
             case READY_FOR_PICKUP -> "PACKED";
             case OUT_FOR_DELIVERY -> "ON_THE_WAY";
-            case DELIVERED -> "ARRIVED";
+            case ARRIVED -> "ARRIVED";
+            case DELIVERED -> "DELIVERED";
             default -> null;
         };
     }
@@ -432,7 +434,8 @@ public class CustomerOrderQueryService {
         return new PricingDto(
                 order.getSubtotalAmount(),
                 order.getDeliveryFeeAmount(),
-                BigDecimal.ZERO,  // TODO: track service fee separately
+                order.getServiceFeeAmount(),
+                order.getSmallOrderFeeAmount(),
                 promoDiscount,
                 order.getTotalAmount()
         );

@@ -12,7 +12,7 @@ Kafka can redeliver messages, and multiple service instances can process the sam
 
 Use `order:lock:{cartId}` with Redis `SET NX EX` during order creation, and release it with a compare-and-delete Lua script.
 
-`CheckoutConfirmedEventProcessor` acquires the lock before mapping and creating the order, releases it in a `finally` block, and throws a retryable exception when the lock is already held by another service instance.
+`CheckoutConfirmedHandler` acquires the lock before mapping and creating the order, releases it in a `finally` block, and throws a retryable exception when the lock is already held by another service instance.
 
 ## Consequences
 

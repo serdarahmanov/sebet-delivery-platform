@@ -127,14 +127,14 @@ class OrderCreationServiceTest {
 
     @Test
     void createsImmediateOrderAsPending() throws Exception {
-        CreateOrderCommand command = command("cart-immediate-1", ScheduleType.IMMEDIATE, null);
+        CreateOrderCommand command = command("cart-ASAP-1", ScheduleType.ASAP, null);
 
         CreateOrderResult result = orderCreationService.createOrder(command);
 
         assertThat(result.createdNewOrder()).isTrue();
         assertThat(result.order().getStatus()).isEqualTo(OrderStatus.PENDING);
 
-        OrderEntity savedOrder = orderRepository.findByCartId("cart-immediate-1").orElseThrow();
+        OrderEntity savedOrder = orderRepository.findByCartId("cart-ASAP-1").orElseThrow();
         assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(savedOrder.getSubtotalAmount()).isEqualByComparingTo(new BigDecimal("33000.00"));
         assertThat(savedOrder.getItemDiscountAmount()).isEqualByComparingTo(new BigDecimal("2000.00"));
@@ -165,7 +165,7 @@ class OrderCreationServiceTest {
                     assertThat(snapshot.getOrderId()).isEqualTo(savedOrder.getId().toString());
                     assertThat(snapshot.getUserId()).isEqualTo("customer-1");
                     assertThat(snapshot.getStoreId()).isEqualTo("store-1");
-                    assertThat(snapshot.getCartId()).isEqualTo("cart-immediate-1");
+                    assertThat(snapshot.getCartId()).isEqualTo("cart-ASAP-1");
                     assertThat(snapshot.getTotalAmount()).isEqualByComparingTo(new BigDecimal("36000.00"));
                     assertThat(snapshot.getEstimatedDeliveryAt()).isNull();
                     assertThat(snapshot.getDeliveryAddress().getStreet()).isEqualTo("Amir Temur 25");
@@ -231,7 +231,7 @@ class OrderCreationServiceTest {
 
     @Test
     void duplicateCartIdReturnsExistingOrderWithoutCreatingRows() {
-        CreateOrderCommand command = command("cart-duplicate-1", ScheduleType.IMMEDIATE, null);
+        CreateOrderCommand command = command("cart-duplicate-1", ScheduleType.ASAP, null);
 
         CreateOrderResult firstResult = orderCreationService.createOrder(command);
         CreateOrderResult secondResult = orderCreationService.createOrder(command);
@@ -255,7 +255,7 @@ class OrderCreationServiceTest {
 
     @Test
     void duplicateCartIdRepairsMissingRedisViews() {
-        CreateOrderCommand command = command("cart-repair-1", ScheduleType.IMMEDIATE, null);
+        CreateOrderCommand command = command("cart-repair-1", ScheduleType.ASAP, null);
 
         CreateOrderResult firstResult = orderCreationService.createOrder(command);
         String orderId = firstResult.order().getId().toString();
@@ -284,7 +284,7 @@ class OrderCreationServiceTest {
 
     @Test
     void duplicateCartIdUsesCurrentDatabaseStateWhenOrderHasAdvanced() {
-        CreateOrderCommand command = command("cart-late-duplicate-1", ScheduleType.IMMEDIATE, null);
+        CreateOrderCommand command = command("cart-late-duplicate-1", ScheduleType.ASAP, null);
 
         CreateOrderResult firstResult = orderCreationService.createOrder(command);
         OrderEntity order = orderRepository.findById(firstResult.order().getId()).orElseThrow();
@@ -337,7 +337,7 @@ class OrderCreationServiceTest {
                 .hasValue(OrderStatus.DELIVERED.name());
         assertThat(orderTimelineRedisRepository.findAll(orderId))
                 .extracting(OrderTimelineEntry::getStatus)
-                .containsExactly("PLACED", "PACKED", "ON_THE_WAY", "ARRIVED");
+                .containsExactly("PLACED", "PACKED", "ON_THE_WAY", "DELIVERED");
         assertThat(activeOrdersRedisRepository.contains("customer-1", orderId)).isFalse();
         assertThat(storeActiveOrdersRedisRepository.contains("store-1", orderId)).isFalse();
         assertThat(storeScheduledOrdersRedisRepository.contains("store-1", orderId)).isFalse();
@@ -346,7 +346,7 @@ class OrderCreationServiceTest {
     @Test
     void storeAcceptPersistsOrderHistoryAndOutboxEvent() throws Exception {
         CreateOrderResult creationResult = orderCreationService.createOrder(
-                command("cart-lifecycle-outbox-1", ScheduleType.IMMEDIATE, null)
+                command("cart-lifecycle-outbox-1", ScheduleType.ASAP, null)
         );
         OrderEntity createdOrder = creationResult.order();
         outboxEventRepository.deleteAll();
@@ -399,6 +399,8 @@ class OrderCreationServiceTest {
                 new BigDecimal("2000.00"),
                 new BigDecimal("3000.00"),
                 new BigDecimal("8000.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
                 new BigDecimal("36000.00"),
                 "UZS",
                 "{\"street\":\"Amir Temur 25\",\"city\":\"Tashkent\"}",
@@ -406,6 +408,8 @@ class OrderCreationServiceTest {
                 new BigDecimal("69.279700"),
                 new BigDecimal("41.320100"),
                 new BigDecimal("69.240500"),
+                null,
+                List.of(),
                 List.of(
                         new CreateOrderItemCommand(
                                 "product-1",
@@ -416,7 +420,8 @@ class OrderCreationServiceTest {
                                 new BigDecimal("24000.00"),
                                 new BigDecimal("2000.00"),
                                 new BigDecimal("22000.00"),
-                                "https://cdn.sebet.test/products/apple.png"
+                                "https://cdn.sebet.test/products/apple.png",
+                                null
                         ),
                         new CreateOrderItemCommand(
                                 "product-2",
@@ -427,6 +432,7 @@ class OrderCreationServiceTest {
                                 new BigDecimal("9000.00"),
                                 BigDecimal.ZERO,
                                 new BigDecimal("9000.00"),
+                                null,
                                 null
                         )
                 )

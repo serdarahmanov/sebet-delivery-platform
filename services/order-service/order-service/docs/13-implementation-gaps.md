@@ -53,7 +53,7 @@ Implemented:
 
 - JPA entities for `orders`, `order_items`, and `order_status_history`
 - JPA repositories
-- Flyway migration `V1__create_order_tables.sql`
+- Flyway migration `V1__create_order_tables.sql` covering the base order schema, outbox event table, processed-events idempotency, enum rename, and the extended order/item schema
 - unique `cart_id` idempotency constraint
 - optimistic lock `orders.version` column
 - unique `(order_id, product_id)` order item constraint
@@ -68,9 +68,10 @@ Pending:
 
 Implemented:
 
-- checkout confirmed event DTOs
+- checkout confirmed envelope and payload DTOs
 - checkout event to order creation command mapper
-- checkout event consumer
+- raw-string checkout event consumer
+- checkout event handler validation and processed-event idempotency
 - real-broker Kafka listener integration tests
 - checkout event retry and DLT handling
 - checkout DLT topic startup validation
@@ -131,7 +132,8 @@ Implemented:
 
 - `GlobalExceptionHandler` (`@RestControllerAdvice`) maps common exceptions to consistent HTTP responses.
 - `ErrorResponse` record (`shared/exception/`) with `code`, `message`, and `timestamp` fields.
-- Input validation for amount fields (`>= 0`) in `CheckoutConfirmedEvent` and `CreateOrderCommand` compact constructors.
+- Checkout envelope validation in `CheckoutConfirmedHandler`.
+- Order creation invariant validation in `CreateOrderCommand`.
 - `deliveryAddressJson` JSON parse validation in `OrderCreationService` before DB write.
 - `InternalAuthInterceptor` fails startup in every environment when `order-service.internal.secret` is blank.
 - `ORDER_NOT_FOUND` (404), raised by `OrderNotFoundException`, is used for both not-found and wrong-owner responses.

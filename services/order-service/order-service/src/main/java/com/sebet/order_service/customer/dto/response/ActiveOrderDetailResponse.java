@@ -74,8 +74,8 @@ public record ActiveOrderDetailResponse(
         String verificationCode,
 
         /**
-         * Full 4-step progress timeline — always contains all steps in order:
-         * PLACED → PACKED → ON_THE_WAY → ARRIVED.
+         * Full 5-step progress timeline — always contains all steps in order:
+         * PLACED → PACKED → ON_THE_WAY → ARRIVED → DELIVERED.
          * Steps not yet reached have {@code occurredAt == null}.
          * Source: Cache 6 (order:timeline:{orderId}).
          * WebSocket pushes new entries incrementally after mount.

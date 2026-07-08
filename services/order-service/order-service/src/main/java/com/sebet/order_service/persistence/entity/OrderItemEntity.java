@@ -62,6 +62,9 @@ public class OrderItemEntity {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal netAmount;
 
+    @Column(length = 150)
+    private String sku;
+
     @Column(columnDefinition = "text")
     private String imageUrl;
 

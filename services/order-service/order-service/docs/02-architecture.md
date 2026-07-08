@@ -68,9 +68,9 @@ com.sebet.order_service
 - Controllers define endpoint contracts. Customer read endpoints, store read endpoints, first store lifecycle write endpoints (accept, reject, ready), and driver lifecycle write endpoints (pickup, arrive, complete) are implemented; remaining customer writes, remaining store writes, driver detail and decline, and all internal methods still throw `UnsupportedOperationException`.
 - `OrderCreationService` creates durable orders, order items, and initial status history from an internal command.
 - Checkout integration DTOs model the cart-service checkout event.
-- `CheckoutConfirmedEventMapper` translates checkout events into order creation commands.
-- `CheckoutConfirmedEventConsumer` listens for checkout events and delegates processing.
-- `CheckoutConfirmedEventProcessor` acquires `order:lock:{cartId}`, invokes order creation, and releases the lock.
+- `CheckoutConfirmedEventConsumer` listens for raw checkout event JSON, deserializes the integration envelope, and delegates processing.
+- `CheckoutConfirmedHandler` validates checkout event envelopes, performs processed-event idempotency, acquires `order:lock:{cartId}`, invokes order creation, and releases the lock.
+- `CheckoutConfirmedEventMapper` translates validated checkout event envelopes into order creation commands.
 - `OrderCreationService` and `OrderCreationRedisWriter` populate Redis hot views after the order transaction commits, using the current database order and history as the source of truth for replay safety.
 - `OrderEventOutboxWriter` records order business events in `outbox_event` inside the same PostgreSQL transaction as the order state change.
 - JPA entities and repositories own durable order persistence.

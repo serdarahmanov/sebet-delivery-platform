@@ -2,7 +2,7 @@
 
 ## Current Tests
 
-The project currently has 164 tests covering:
+The project currently has 183 order-service tests covering:
 
 - Redis key generation.
 - MVC interceptor tests for `X-User-Id`, `X-Store-Id`, and `X-Internal-Key`.
@@ -11,7 +11,7 @@ The project currently has 164 tests covering:
 - JPA repository tests against PostgreSQL Testcontainers.
 - Order creation service integration tests.
 - Checkout event mapper unit tests.
-- Checkout event processor lock unit tests.
+- Checkout event handler lock, validation, and idempotency unit tests.
 - Checkout Kafka listener and retry/DLT integration tests against real brokers.
 - `CustomerOrderQueryService` unit tests covering all 10 read methods: cache hit, DB fallback, ownership denial, timeline building, order number format, and batch item queries.
 - Customer active-order reads filter out stale C1 entries whose C2 snapshot belongs to another user.
@@ -67,12 +67,12 @@ Compile without running tests:
 - internal API key validation and fail-fast behavior when the secret is blank
 - checkout event mapping
 - checkout event consumer delegation
-- checkout event processor Redis lock behavior
+- checkout event handler Redis lock, validation, and idempotency behavior
 - checkout Kafka listener integration
 - durable order repository behavior
 - optimistic locking and per-order product uniqueness
 - order creation behavior
-- Redis hot-view writes for immediate and scheduled order creation
+- Redis hot-view writes for ASAP and scheduled order creation
 - Redis store membership TTL refresh
 - Redis order status customer/store ownership serialization
 - store accept/reject/ready lifecycle transitions
@@ -118,10 +118,10 @@ Implemented integration coverage:
 - JPA order/item/status-history persistence
 - cart id uniqueness
 - item line-number ordering
-- initial order creation for immediate and scheduled orders
+- initial order creation for ASAP and scheduled orders
 - duplicate cart id handling in order creation
-- checkout event processor mapping, lock handling, and duplicate-path behavior
-- checkout event processor Redis hot-view initialization and recovery behavior from current database state
+- checkout event handler mapping, lock handling, validation, processed-event idempotency, and duplicate-cart behavior
+- checkout event handler Redis hot-view initialization and recovery behavior from current database state
 - Kafka listener integration against a real broker
 - Kafka retry/DLT behavior
 - checkout event consumption with Redis lock support

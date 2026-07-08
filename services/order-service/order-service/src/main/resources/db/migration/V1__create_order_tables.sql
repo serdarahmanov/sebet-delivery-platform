@@ -84,3 +84,44 @@ create table order_status_history (
 
 create index idx_order_status_history_order_created_at on order_status_history (order_id, created_at asc);
 create index idx_order_status_history_to_status_created_at on order_status_history (to_status, created_at desc);
+
+update orders
+set schedule_type = 'ASAP'
+where schedule_type = 'IMMEDIATE';
+
+alter table orders
+    alter column delivery_lat drop not null,
+    alter column delivery_lng drop not null;
+
+create table processed_events (
+    event_id uuid primary key,
+    event_type varchar(100) not null,
+    processed_at timestamp with time zone not null default now(),
+    occurred_at timestamp with time zone
+);
+
+create index idx_processed_events_event_type_processed_at
+    on processed_events (event_type, processed_at);
+
+-- orders: promo codes applied at checkout
+alter table orders
+    add column selected_promo_codes jsonb not null default '[]'::jsonb;
+
+-- orders: fee quote that was locked at checkout (nullable - legacy orders predate this column)
+alter table orders
+    add column fee_quote_id varchar(100);
+
+-- orders: service and small-order fee amounts (always present from this migration forward)
+alter table orders
+    add column service_fee_amount numeric(12, 2) not null default 0,
+    add column small_order_fee_amount numeric(12, 2) not null default 0;
+
+-- orders: store coordinates - backfill any legacy nulls then enforce not null
+update orders set store_lat = 0, store_lng = 0 where store_lat is null or store_lng is null;
+alter table orders
+    alter column store_lat set not null,
+    alter column store_lng set not null;
+
+-- order_items: merchant SKU from product catalog (nullable - not all products have a SKU)
+alter table order_items
+    add column sku varchar(150);

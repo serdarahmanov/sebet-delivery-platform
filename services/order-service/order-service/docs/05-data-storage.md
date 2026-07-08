@@ -12,9 +12,9 @@ Implemented:
 - Redis Lua script beans for lock release and active-set cleanup.
 - JPA entities for orders, order items, and order status history.
 - JPA entity for Debezium outbox events.
+- JPA entity for processed checkout event ids.
 - Spring Data JPA repositories.
-- Flyway migration `V1__create_order_tables.sql`.
-- Flyway migration `V2__create_outbox_event_table.sql`.
+- Flyway migration `V1__create_order_tables.sql` covering the base order schema, outbox events, processed-events idempotency, enum rename, and the extended order/item schema.
 - JSONB mapping for the delivery address snapshot and status metadata.
 - Unique `orders.cart_id` idempotency constraint.
 - Unique per-order `order_items.line_number` constraint.
@@ -78,6 +78,7 @@ The current durable schema stores:
 - `order_items`: durable item snapshots with product, quantity, unit, pricing, discount, image URL, and line number.
 - `order_status_history`: append-style status transition records.
 - `outbox_event`: append-only order business events for Debezium publication.
+- `processed_events`: consumed integration event ids already applied by order-service.
 
 Important constraints and indexes:
 
@@ -93,8 +94,10 @@ Important constraints and indexes:
 - `outbox_event.event_key` stores the Kafka key, currently the order id.
 - `outbox_event.payload` stores the canonical event envelope as queryable `jsonb`.
 - outbox indexes on `(aggregate_type, aggregate_id)`, `(event_type, created_at)`, and `created_at`.
+- `processed_events.event_id` primary key prevents the same checkout event from being applied twice.
+- `processed_events(event_type, processed_at)` supports operational review of processed integration events.
 
-Delivery address is stored as `jsonb` because it is a checkout-time snapshot owned by the order. Coordinates are stored as explicit numeric columns for easier querying and mapping.
+Delivery address is stored as `jsonb` because it is a checkout-time snapshot owned by the order. Store coordinates are stored as explicit numeric columns for easier querying and mapping. The combined V1 migration backfills legacy `store_lat` and `store_lng` values to `0` before the NOT NULL constraint is applied.
 
 ## Data Rule
 
@@ -105,8 +108,8 @@ New checkout orders now populate the hot-view keys after the database transactio
 - `order:{orderId}` snapshot
 - `order:status:{orderId}`
 - `order:timeline:{orderId}`
-- `user:active_orders:{userId}` for immediate orders
-- `store:active_orders:{storeId}` for immediate orders
+- `user:active_orders:{userId}` for ASAP orders
+- `store:active_orders:{storeId}` for ASAP orders
 - `store:scheduled_orders:{storeId}` for scheduled orders
 
 Store read paths fall back to PostgreSQL if store membership keys point to

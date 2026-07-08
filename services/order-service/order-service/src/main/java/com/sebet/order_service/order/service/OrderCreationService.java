@@ -67,6 +67,8 @@ public class OrderCreationService {
                 .itemDiscountAmount(command.itemDiscountAmount())
                 .orderDiscountAmount(command.orderDiscountAmount())
                 .deliveryFeeAmount(command.deliveryFeeAmount())
+                .serviceFeeAmount(command.serviceFeeAmount())
+                .smallOrderFeeAmount(command.smallOrderFeeAmount())
                 .totalAmount(command.totalAmount())
                 .currency(command.currency())
                 .deliveryAddressJson(command.deliveryAddressJson())
@@ -74,6 +76,8 @@ public class OrderCreationService {
                 .deliveryLng(command.deliveryLng())
                 .storeLat(command.storeLat())
                 .storeLng(command.storeLng())
+                .feeQuoteId(command.feeQuoteId())
+                .selectedPromoCodes(command.selectedPromoCodes())
                 .createdAt(now)
                 .updatedAt(now)
                 .build());

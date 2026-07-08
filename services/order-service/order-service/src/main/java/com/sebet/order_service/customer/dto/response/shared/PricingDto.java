@@ -10,6 +10,7 @@ public record PricingDto(
         BigDecimal itemsSubtotal,
         BigDecimal deliveryFee,
         BigDecimal serviceFee,
+        BigDecimal smallOrderFee,
         /** Total discount applied from promo codes; zero if none applied. */
         BigDecimal promoDiscount,
         BigDecimal grandTotal

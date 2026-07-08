@@ -4,7 +4,7 @@
 
 | Topic | Event | Purpose | Status |
 |---|---|---|---|
-| `checkout-events` | `CheckoutConfirmedEvent` | Create order from cart checkout | Consumer, DTO, mapper, Redis lock, DB creation, retry, and DLT handling implemented |
+| `checkout-events` | `CheckoutConfirmed` envelope | Create order from cart checkout | Raw-string consumer, envelope DTOs, handler validation, processed-event idempotency, Redis lock, DB creation, retry, and DLT handling implemented |
 | `order.arrived` | `OrderArrivedEvent` | Generate delivery verification code and update tracking | Pending |
 | `driver-location-events` | `DriverLocationUpdatedEvent` | Update Cache 3 (movementStatus, driverLat, driverLng, etaMinutes) and push WebSocket tracking update to customer | Pending |
 
@@ -12,7 +12,7 @@
 
 | Topic | Event | Trigger |
 |---|---|---|
-| `order-events` | `OrderCreated` | after an immediate order is created |
+| `order-events` | `OrderCreated` | after an ASAP order is created |
 | `order-events` | `OrderScheduled` | after a scheduled order is created |
 | `order-events` | `OrderActivated` | after a scheduled order enters the live queue |
 | `order-events` | `OrderAccepted` | after store acceptance |
@@ -71,51 +71,61 @@ maintaining projections.
 
 Target flow:
 
-1. Consume `CheckoutConfirmedEvent`.
-2. Acquire `order:lock:{cartId}`.
-3. Map it to `CreateOrderCommand`.
-4. Persist order in PostgreSQL.
-5. Insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction.
-6. Write Redis hot keys after commit.
-7. Release lock.
+1. Consume the raw JSON value from `checkout-events`.
+2. Deserialize it as `IntegrationEvent<CheckoutConfirmedPayload>`.
+3. Validate the envelope and payload contract.
+4. Skip if `processed_events.event_id` already exists.
+5. Acquire `order:lock:{cartId}`.
+6. Map it to `CreateOrderCommand`.
+7. Persist order in PostgreSQL.
+8. Insert the checkout `eventId` into `processed_events` after successful order creation and Redis initialization.
+9. Insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction.
+10. Write Redis hot keys after commit.
+11. Release lock.
 
 Implemented pieces:
 
-- `CheckoutConfirmedEvent`
-- `CheckoutConfirmedItem`
-- `CheckoutDeliveryAddress`
-- `CheckoutStoreLocation`
+- `IntegrationEvent<T>`
+- `CheckoutConfirmedPayload`
+- `MoneyBreakdown`
+- `DeliverySnapshot`
+- `StoreLocationSnapshot`
+- `CheckoutItemPayload`
+- `CheckoutScheduleType`
 - `CheckoutConfirmedEventMapper`
 - `CheckoutConfirmedEventConsumer`
-- `CheckoutConfirmedEventProcessor`
+- `CheckoutConfirmedHandler`
 - `OrderCreationService`
 - `OrderCreationRedisWriter`
+- `ProcessedEventRepository`
 - `OrderEventOutboxWriter`
 - `OutboxEventRepository`
 
-The mapper preserves item order, item-level discounts, order-level discounts, address snapshot, delivery coordinates, store coordinates, schedule type, and `cartId`.
+The mapper preserves item order, item gross/discount/net amounts, order-level totals, address snapshot, store location snapshot, schedule type, and `cartId`.
 
 Currently implemented in the flow:
 
-- consume `CheckoutConfirmedEvent`
+- consume raw JSON checkout envelopes from `checkout-events`
+- deserialize `IntegrationEvent<CheckoutConfirmedPayload>` manually with Jackson
+- validate event id, type, version, aggregate type/id, money, snapshots, items, and schedule rules
 - acquire and release `order:lock:{cartId}` around order creation
 - map it to `CreateOrderCommand`
 - persist order, order items, and initial status history in PostgreSQL
 - insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction
 - insert specialized lifecycle events into `outbox_event` in the same PostgreSQL transaction
-- handle duplicate checkout events through `orders.cart_id` idempotency
+- handle duplicate checkout events through `processed_events.event_id` and `orders.cart_id` idempotency, while recording the processed event only after Redis initialization succeeds
 - initialize the Redis snapshot, status, timeline, and active/scheduled membership after commit
 
 ## Current Implementation Status
 
-Spring Kafka dependencies are present. The checkout event consumer is implemented and delegates to `CheckoutConfirmedEventProcessor`, which acquires the Redis checkout lock, maps the event, and calls `OrderCreationService`. It can consume real Kafka events when its listener startup property is enabled and `spring.kafka.bootstrap-servers` points to a broker.
+Spring Kafka dependencies are present. The checkout event consumer is implemented as a raw `String` listener and delegates valid envelopes to `CheckoutConfirmedHandler`, which enforces idempotency, acquires the Redis checkout lock, maps the event, and calls `OrderCreationService`. It can consume real Kafka events when its listener startup property is enabled and `spring.kafka.bootstrap-servers` points to a broker.
 
 Checkout event retry and DLT handling are implemented with Spring Kafka container infrastructure:
 
 - failed listener processing is retried with configurable exponential backoff
 - exhausted failures are published to the configured DLT topic with the original key
 - DLT records are routed to the same partition number as the source record when the DLT topic has enough partitions
-- deserialization is wrapped by `ErrorHandlingDeserializer` so malformed records can be routed through the error handler
+- deserialization is string-based and malformed checkout JSON is surfaced as listener failure so it can be routed through the error handler
 - common permanent failures such as deserialization, conversion, validation, illegal argument, and data-integrity errors are marked non-retryable
 - failed records are sought back after errors unless recovery succeeds, so a DLT publish failure does not mark the source record as handled
 
@@ -161,7 +171,7 @@ If a replay happens after a partial Redis failure, the cache write-through path 
 
 The Redis lock owner value comes from `order-service.instance-id`. If it is not configured, the service uses `${spring.application.name}-${random.uuid}`, which gives each running replica a distinct owner value.
 
-The checkout processor is covered by unit tests for successful creation, duplicate handling, failure release, lock contention, release failure, and concurrent duplicate checkout events. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON deserialization failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding.
+The checkout handler is covered by unit tests for successful creation, processed-event duplicate handling, duplicate cart handling, validation failures, failure release, lock contention, and release failure. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding.
 
 ## Design Rule
 

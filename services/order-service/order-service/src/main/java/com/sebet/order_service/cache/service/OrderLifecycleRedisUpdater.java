@@ -63,6 +63,7 @@ public class OrderLifecycleRedisUpdater {
             case READY_FOR_PICKUP -> "PACKED";
             case OUT_FOR_DELIVERY -> "ON_THE_WAY";
             case ARRIVED -> "ARRIVED";
+            case DELIVERED -> "DELIVERED";
             default -> null;
         };
     }
