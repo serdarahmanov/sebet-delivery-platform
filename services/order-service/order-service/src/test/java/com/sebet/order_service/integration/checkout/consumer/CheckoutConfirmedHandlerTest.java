@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -147,6 +148,27 @@ class CheckoutConfirmedHandlerTest {
 
         verify(orderLockRedisRepository).release("cart-release-false", INSTANCE_ID);
         verify(processedEventWriter).markProcessed(event);
+    }
+
+    @Test
+    void propagatesProcessedEventPersistenceFailureAfterRedisInitialization() {
+        IntegrationEvent<CheckoutConfirmedPayload> event = CheckoutEventTestFactory.checkoutEvent("cart-processed-write-fails");
+        CreateOrderCommand command = mock(CreateOrderCommand.class);
+        OrderEntity order = order("cart-processed-write-fails");
+        IllegalStateException failure = new IllegalStateException("processed_events insert failed");
+
+        when(processedEventWriter.isAlreadyProcessed(event.eventId())).thenReturn(false);
+        when(orderLockRedisRepository.tryAcquire("cart-processed-write-fails", INSTANCE_ID)).thenReturn(true);
+        when(mapper.toCreateOrderCommand(event)).thenReturn(command);
+        when(orderCreationService.createOrder(command)).thenReturn(new CreateOrderResult(order, true));
+        doThrow(failure).when(processedEventWriter).markProcessed(event);
+        when(orderLockRedisRepository.release("cart-processed-write-fails", INSTANCE_ID)).thenReturn(true);
+
+        assertThatThrownBy(() -> handler.handle(event)).isSameAs(failure);
+
+        verify(orderCreationService).createOrder(command);
+        verify(processedEventWriter).markProcessed(event);
+        verify(orderLockRedisRepository).release("cart-processed-write-fails", INSTANCE_ID);
     }
 
     @Test

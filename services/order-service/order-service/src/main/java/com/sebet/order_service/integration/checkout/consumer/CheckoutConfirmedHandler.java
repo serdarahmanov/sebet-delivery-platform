@@ -70,7 +70,18 @@ public class CheckoutConfirmedHandler {
                 log.info("Created order id={} from checkout cartId={}", result.order().getId(), cartId);
             }
 
-            processedEventWriter.markProcessed(event);
+            try {
+                processedEventWriter.markProcessed(event);
+            } catch (RuntimeException exception) {
+                log.error(
+                        "Failed to record processed checkout event after order creation and Redis initialization; " +
+                                "Kafka should redeliver cartId={} eventId={}",
+                        cartId,
+                        event.eventId(),
+                        exception
+                );
+                throw exception;
+            }
         } finally {
             boolean released = orderLockRedisRepository.release(cartId, instanceId);
             if (!released) {
