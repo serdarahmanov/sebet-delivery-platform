@@ -20,6 +20,9 @@ The first store lifecycle slice is implemented:
 | `PENDING` | accept | `CONFIRMED` | `POST /api/v1/store/orders/{orderId}/accept` |
 | `PENDING` | reject | `CANCELLED` | `POST /api/v1/store/orders/{orderId}/reject` |
 | `CONFIRMED` | ready | `READY_FOR_PICKUP` | `POST /api/v1/store/orders/{orderId}/ready` |
+| `CONFIRMED` | cancel | `CANCELLED` | `POST /api/v1/store/orders/{orderId}/cancel` |
+| `AWAITING_CUSTOMER_RESPONSE` | cancel | `CANCELLED` | `POST /api/v1/store/orders/{orderId}/cancel` |
+| `CONFIRMED` | propose changes | `AWAITING_CUSTOMER_RESPONSE` | `POST /api/v1/store/orders/{orderId}/propose-changes` |
 
 Implemented transitions:
 
@@ -36,6 +39,8 @@ Redis behavior:
 - `accept` updates C4 (`order:status:{orderId}`)
 - `ready` updates C4 and appends `PACKED` to C6 (`order:timeline:{orderId}`) if it is missing
 - `reject` moves the order to `CANCELLED`, removes it from active user/store sets, and deletes hot order/status/tracking/timeline keys
+- post-acceptance `cancel` moves the order to `CANCELLED`, then uses `CANCELLED_ORDER_HOT_VIEWS` to atomically remove C1/C1b memberships and delete C2, C3, C4, and C6 through the fallback eviction pattern
+- `propose-changes` atomically writes the proposal JSON to C8 (`order:proposals:{orderId}`), updates C4 status value, and appends an `AWAITING_CUSTOMER_RESPONSE` timeline entry to C6 using `proposeChangesRedisUpdateScript`; if the Lua script fails with a recoverable Redis error, the endpoint falls back to `requestEvictionAfterUpdateFailure` with the `PROPOSE_CHANGES_HOT_VIEWS` strategy
 
 ## Implemented Driver Transitions
 
@@ -114,28 +119,20 @@ AWAITING_CUSTOMER_RESPONSE
   -> CANCELLED
 ```
 
-Proposal transitions are pending.
+The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response transitions remain pending.
 
 ## Cancellation Paths
 
 Implemented cancellation paths:
 
 - store rejects while `PENDING`
+- store cancels after acceptance while `CONFIRMED` or `AWAITING_CUSTOMER_RESPONSE`
 
 Planned cancellation paths:
 
 - customer cancels before cutoff
-- store cancels after acceptance
 - system cancels after store/customer timeout
 - system cancels on unrecoverable processing failure
-
-## Remaining Store Actions
-
-| From status | Action | Result | Status |
-|---|---|---|---|
-| `CONFIRMED` | propose changes | `AWAITING_CUSTOMER_RESPONSE` | pending |
-| `CONFIRMED` | cancel | `CANCELLED` | pending |
-| `AWAITING_CUSTOMER_RESPONSE` | cancel | `CANCELLED` | pending |
 
 ## Terminal States
 
@@ -144,7 +141,7 @@ Planned cancellation paths:
 
 ## Customer Timeline
 
-The customer sees five steps:
+The customer sees five steps on the normal delivery path:
 
 1. `PLACED`
 2. `PACKED`
@@ -163,3 +160,5 @@ This timeline is intentionally simpler than the internal order status enum. `CON
 | `DELIVERED` | `DELIVERED` |
 
 `PACKED`, `ON_THE_WAY`, and `ARRIVED` are deduplicated before append. `DELIVERED` is appended unconditionally since it is terminal and fires exactly once. On cancellation the entire C6 timeline is deleted.
+
+When the store proposes changes, an additional `AWAITING_CUSTOMER_RESPONSE` entry is appended to C6 (alongside the C8 and C4 updates). This entry signals to the customer app that a decision is pending. It is not one of the five delivery-path steps and does not affect `PACKED`, `ON_THE_WAY`, `ARRIVED`, or `DELIVERED` deduplication logic.

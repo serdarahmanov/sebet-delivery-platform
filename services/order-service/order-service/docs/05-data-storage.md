@@ -14,9 +14,11 @@ Implemented:
 - JPA entity for Debezium outbox events.
 - JPA entity for processed checkout event ids.
 - JPA entity for idempotent REST commands.
+- JPA entity for order proposals.
 - Spring Data JPA repositories.
 - Flyway migration `V1__create_order_tables.sql` covering the base order schema, outbox events, processed-events idempotency, enum rename, and the extended order/item schema.
 - Flyway migration `V3__create_idempotent_commands.sql` for REST write idempotency.
+- Flyway migration `V4__create_order_proposals_table.sql` for durable storage of store-proposed item changes.
 - JSONB mapping for the delivery address snapshot and status metadata.
 - Unique `orders.cart_id` idempotency constraint.
 - Unique per-order `order_items.line_number` constraint.
@@ -27,7 +29,7 @@ The delivery verification code (C7) is also persisted to `order_status_history.m
 
 Pending:
 
-- Durable proposal/refund extensions if those states need long-term storage.
+- Durable refund or verification-code extensions if those states require long-term storage beyond current implementations.
 
 ## Redis Key Registry
 
@@ -69,6 +71,8 @@ Key patterns:
 
 - `releaseLockScript`: deletes `order:lock:{cartId}` only when the stored owner matches the caller.
 - `removeActiveOrderScript`: removes an order id from an active SET and deletes the key if the set becomes empty.
+- `proposeChangesRedisUpdateScript`: atomically writes the proposal JSON to C8, updates the status value in C4, and appends a timeline entry to C6 in one round-trip.
+- `evictCancelledOrderHotViewsScript`: atomically removes C1/C1b memberships and deletes C2, C3, C4, and C6 for cancelled-order hot-view cleanup.
 
 These scripts close common Redis race windows.
 
@@ -102,6 +106,9 @@ Important constraints and indexes:
 - `idempotent_commands.id` primary key.
 - `idempotent_commands(action, idempotency_key)` unique index prevents duplicate command execution for the same action.
 - `idempotent_commands(order_id, action, created_at desc)` supports operational lookup by order/action.
+- `order_proposals.order_id` foreign key to `orders.id` with cascade delete.
+- `order_proposals.order_id` unique constraint prevents more than one active proposal per order.
+- `order_proposals.items_json` stores the proposed item list as `jsonb`.
 
 Delivery address is stored as `jsonb` because it is a checkout-time snapshot owned by the order. Store coordinates are stored as explicit numeric columns for easier querying and mapping. The combined V1 migration backfills legacy `store_lat` and `store_lng` values to `0` before the NOT NULL constraint is applied.
 
@@ -125,10 +132,12 @@ Customer active-order reads skip C1 entries whose C2 snapshot is missing or
 belongs to a different user. Single-order customer reads still hide wrong-owner
 access with `404 ORDER_NOT_FOUND`.
 
-Driver assignment writes and driver decline write the order change, outbox event,
-and idempotent command record in one PostgreSQL transaction. After that commit,
-they try to evict C2. If Redis is unavailable or the eviction result is unknown
-because the Redis command times out, they write an
+Driver assignment writes, driver decline, and store cancel write the order
+change, outbox event, and idempotent command record in one PostgreSQL
+transaction. After that commit, assignment/decline try to evict C2, while store
+cancel tries to evict `CANCELLED_ORDER_HOT_VIEWS` (C1/C1b membership removal
+plus C2/C3/C4/C6 deletes). If Redis is unavailable or the eviction result is
+unknown because the Redis command times out, they write an
 `OrderCacheEvictionRequested` outbox event in a new transaction and return
 success. Non-Redis runtime failures are allowed to propagate. A
 `503 CACHE_INVALIDATION_FAILED` is returned only if direct eviction fails with a
@@ -136,6 +145,15 @@ recoverable Redis failure and the fallback eviction event cannot be recorded. A
 retry with the same `Idempotency-Key` replays the stored response and repeats
 the eviction path, without duplicating the order update or business outbox
 event.
+
+Store propose-changes writes the order status change, status history, proposal
+record, `OrderProposedToCustomer` outbox event, and idempotent command record in
+one PostgreSQL transaction. After that commit, the endpoint atomically updates
+C8, C4, and C6 using `proposeChangesRedisUpdateScript`. If the Lua script throws
+a recoverable Redis failure, `requestEvictionAfterUpdateFailure` is called,
+which skips any direct eviction attempt and immediately writes one
+`OrderCacheEvictionRequested` event with the `PROPOSE_CHANGES_HOT_VIEWS`
+strategy, so the consumer can evict C8, C4, and C6 once Redis recovers.
 
 JPA Open Session in View is disabled. Service methods should load and map all
 data needed by REST responses inside explicit transactional boundaries.

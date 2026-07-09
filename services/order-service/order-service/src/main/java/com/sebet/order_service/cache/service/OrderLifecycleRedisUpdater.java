@@ -24,17 +24,27 @@ public class OrderLifecycleRedisUpdater {
     private final ActiveOrdersRedisRepository activeOrdersRedisRepository;
     private final StoreActiveOrdersRedisRepository storeActiveOrdersRedisRepository;
     private final VerificationCodeRedisRepository verificationCodeRedisRepository;
+    private final OrderCacheEvictionService orderCacheEvictionService;
 
     public void applyTransition(OrderEntity order, OrderStatus newStatus, String changedAt) {
+        applyTransition(order, newStatus, changedAt, null);
+    }
+
+    public void applyTransition(OrderEntity order, OrderStatus newStatus, String changedAt, String sourceAction) {
+        applyTransition(order, newStatus, changedAt, sourceAction, null);
+    }
+
+    public void applyTransition(
+            OrderEntity order,
+            OrderStatus newStatus,
+            String changedAt,
+            String sourceAction,
+            String idempotencyKey
+    ) {
         String orderId = order.getId().toString();
 
         if (newStatus == OrderStatus.CANCELLED) {
-            activeOrdersRedisRepository.remove(order.getCustomerId(), orderId);
-            storeActiveOrdersRedisRepository.remove(order.getStoreId(), orderId);
-            orderRedisRepository.delete(orderId);
-            orderTrackingRedisRepository.delete(orderId);
-            orderStatusRedisRepository.delete(orderId);
-            orderTimelineRedisRepository.delete(orderId);
+            evictCancelledOrder(order, orderId, sourceAction, idempotencyKey);
             return;
         }
 
@@ -66,5 +76,18 @@ public class OrderLifecycleRedisUpdater {
             case DELIVERED -> "DELIVERED";
             default -> null;
         };
+    }
+
+    private void evictCancelledOrder(OrderEntity order, String orderId, String sourceAction, String idempotencyKey) {
+        if (sourceAction == null) {
+            activeOrdersRedisRepository.remove(order.getCustomerId(), orderId);
+            storeActiveOrdersRedisRepository.remove(order.getStoreId(), orderId);
+            orderRedisRepository.delete(orderId);
+            orderTrackingRedisRepository.delete(orderId);
+            orderStatusRedisRepository.delete(orderId);
+            orderTimelineRedisRepository.delete(orderId);
+        } else {
+            orderCacheEvictionService.evictCancelledOrderHotViewsOrRequestEviction(orderId, sourceAction, idempotencyKey);
+        }
     }
 }

@@ -44,6 +44,12 @@ Required header:
 X-Store-Id: <store-id>
 ```
 
+Additional required header for `POST /api/v1/store/orders/{orderId}/cancel` and `POST /api/v1/store/orders/{orderId}/propose-changes`:
+
+```http
+Idempotency-Key: <unique-command-key>
+```
+
 Endpoint groups:
 
 - `GET /api/v1/store/orders`
@@ -174,14 +180,15 @@ The following store write endpoints are implemented through `StoreOrderLifecycle
 | `POST /api/v1/store/orders/{orderId}/accept` | `PENDING -> CONFIRMED` | implemented |
 | `POST /api/v1/store/orders/{orderId}/reject` | `PENDING -> CANCELLED` | implemented |
 | `POST /api/v1/store/orders/{orderId}/ready` | `CONFIRMED -> READY_FOR_PICKUP` | implemented |
+| `POST /api/v1/store/orders/{orderId}/cancel` | `CONFIRMED` or `AWAITING_CUSTOMER_RESPONSE` -> `CANCELLED` | implemented |
+| `POST /api/v1/store/orders/{orderId}/propose-changes` | `CONFIRMED` -> `AWAITING_CUSTOMER_RESPONSE` | implemented |
 
 Invalid lifecycle transitions return `409 Conflict` with `ORDER_INVALID_TRANSITION`.
 Orders that do not exist or do not belong to the calling store return `404 ORDER_NOT_FOUND`.
 
-The following store endpoints are still pending:
+Store `/cancel` requires `Idempotency-Key`. The cancelled status, status history, lifecycle outbox event, and idempotent command response commit in the same database transaction. Reusing the same key with the same request returns the stored response; reusing it with a different request returns `409 IDEMPOTENCY_KEY_CONFLICT`. After commit and on idempotent replay, the endpoint runs `CANCELLED_ORDER_HOT_VIEWS` eviction through the cache-eviction fallback pattern. That strategy uses one Redis Lua script to `SREM` the order from C1/C1b and `DEL` C2, C3, C4, and C6 atomically. Recoverable Redis connection failures or command timeouts write one `OrderCacheEvictionRequested` event containing all target `cacheKeys`; non-Redis runtime failures propagate.
 
-- `POST /api/v1/store/orders/{orderId}/cancel`
-- `POST /api/v1/store/orders/{orderId}/propose-changes`
+Store `/propose-changes` requires `Idempotency-Key`. The endpoint validates that the product names, units, and requested quantities in the proposal match the stored order items. The updated status, status history, proposal record, `OrderProposedToCustomer` outbox event, and idempotent command response commit in the same database transaction. Reusing the same key with the same request returns the stored response; reusing it with a different request returns `409 IDEMPOTENCY_KEY_CONFLICT`. After the database transaction commits, the endpoint atomically updates C8 (proposal JSON), C4 (status value), and C6 (timeline entry) using a single Redis Lua script. If the Lua script throws a recoverable Redis availability failure, `requestEvictionAfterUpdateFailure` is called with the `PROPOSE_CHANGES_HOT_VIEWS` strategy, which skips the direct eviction attempt and writes one `OrderCacheEvictionRequested` event immediately. Non-Redis runtime failures propagate.
 
 ### Driver API - Endpoints
 
@@ -243,4 +250,4 @@ Current and planned status code conventions:
 - `403 Forbidden`: invalid `X-Internal-Key` value, or `X-Driver-Id` does not match the driver assigned to the order.
 - `404 Not Found`: order/proposal/code not found, or wrong order owner where ownership should be hidden.
 - `409 Conflict`: invalid lifecycle transition, modification outside allowed window, or reused `Idempotency-Key` with a different request.
-- `503 Service Unavailable`: write committed, direct C2 cache eviction failed with a recoverable Redis failure, and the fallback `OrderCacheEvictionRequested` event could not be recorded; retry with the same `Idempotency-Key`.
+- `503 Service Unavailable`: write committed, direct Redis hot-view eviction failed with a recoverable Redis failure, and the fallback `OrderCacheEvictionRequested` event could not be recorded; retry the same request, reusing the same `Idempotency-Key` only for endpoints that require one.

@@ -24,23 +24,23 @@ Each tier is a safety net for the one above it. Under normal conditions only
 Tier 1 runs. Tier 2 absorbs transient Redis outages. Tier 3 surfaces the rare
 case where the system cannot guarantee eventual eviction through any path.
 
-## Tier 1: Internal API — Direct Eviction
+## Tier 1: Write API — Direct Eviction
 
-The internal API endpoint:
+The write endpoint:
 
 1. Validates and applies the state change to the order.
 2. Writes the business outbox event and idempotency record in the same database
    transaction as the state change.
 3. Commits.
-4. Attempts direct Redis `DEL` after commit.
+4. Attempts direct Redis eviction after commit.
 
-If `DEL` returns normally (key deleted or key did not exist — both are success),
-return `200`. The offset of any later retry is committed.
+If the eviction strategy returns normally, return `200`. A missing key is still
+success because the desired postcondition is that the stale hot view is gone.
+The offset of any later retry is committed.
 
-`DEL` is the only Redis call in this path. There is no `EXISTS` check after
-`DEL`: another process could rebuild the key between `DEL` and `EXISTS`, making
-a successful eviction appear failed. `DEL` returning normally is the sufficient
-and correct success signal.
+There is no `EXISTS` check after eviction: another process could rebuild the key
+between eviction and `EXISTS`, making a successful eviction appear failed. The
+strategy returning normally is the sufficient and correct success signal.
 
 ## Tier 2: Fallback Event — Async Eviction via Kafka
 
@@ -57,6 +57,7 @@ whether Redis was unavailable or the direct eviction result was unknown:
     "orderId": "order-id",
     "cacheName": "C2",
     "cacheKey": "order:order-id",
+    "cacheKeys": ["order:order-id"],
     "reason": "DRIVER_ASSIGNMENT_CHANGED",
     "sourceAction": "INTERNAL_ASSIGN_DRIVER",
     "idempotencyKey": "idempotency-key",
@@ -82,9 +83,10 @@ If writing the fallback event also fails (outbox write throws), the system canno
 guarantee eviction through any path. Throw `CacheInvalidationFailedException`,
 which the global exception handler maps to `503 CACHE_INVALIDATION_FAILED`.
 
-The caller should retry with the same `Idempotency-Key`. The idempotency record
-ensures the state change is not re-applied. The eviction path is always re-run
-on retry regardless of whether the idempotency record already exists.
+The caller should retry the same request. For endpoints that require
+`Idempotency-Key`, reuse the same key so the state change is not re-applied. The
+eviction path is always re-run on retry regardless of whether an idempotency
+record already exists.
 
 ## Tier 2 Consumer: OrderCacheEvictionProjectionConsumer
 
@@ -133,7 +135,8 @@ All cache-specific eviction logic is encapsulated behind `CacheEvictionStrategy`
 ```java
 public interface CacheEvictionStrategy {
     String cacheName();                  // registry key, e.g. "C2"
-    String cacheKey(String aggregateId); // full Redis key, used in the fallback event
+    String cacheKey(String aggregateId); // primary Redis key, used in the fallback event
+    List<String> cacheKeys(String id);   // all affected keys, defaults to List.of(cacheKey(id))
     void evict(String aggregateId);      // performs the deletion
 }
 ```
@@ -145,8 +148,34 @@ at startup and builds a `Map<cacheName, strategy>`. When an
 
 `OrderCacheEvictionService.evictOrRequestEviction` uses the same interface on the
 write path: it calls `strategy.evict(aggregateId)` and on failure uses
-`strategy.cacheName()` and `strategy.cacheKey(aggregateId)` to populate the
-fallback outbox event.
+`strategy.cacheName()`, `strategy.cacheKey(aggregateId)`, and
+`strategy.cacheKeys(aggregateId)` to populate the fallback outbox event.
+
+`OrderCacheEvictionService.requestEvictionAfterUpdateFailure` is a variant for
+write paths that perform an atomic Redis update rather than a pure eviction.
+When the Lua update script throws a recoverable Redis failure, the caller passes
+the exception directly to `requestEvictionAfterUpdateFailure` along with the
+eviction strategy that can clean up the now-inconsistent keys. The method skips
+the direct eviction attempt (the exception proves Redis is already unreachable)
+and goes straight to recording an `OrderCacheEvictionRequested` fallback event.
+Non-Redis runtime failures are re-thrown without recording a fallback event.
+
+Grouped strategies are allowed when one logical write must mutate multiple Redis
+structures atomically. `CANCELLED_ORDER_HOT_VIEWS` removes the order id from C1
+and C1b and deletes C2, C3, C4, and C6 with one Redis Lua script. If Redis is
+unavailable, one fallback event retries the full grouped cleanup.
+
+`PROPOSE_CHANGES_HOT_VIEWS` groups C8, C4, and C6 for the propose-changes path.
+Its `evict(orderId)` calls `redisTemplate.delete(List.of(C8, C4, C6))` — a
+single multi-DEL without a Lua script, which is sufficient for eviction because
+all three keys are already stale when the consumer processes the event. The
+`cacheKey` primary key is C8 (`order:proposals:{orderId}`).
+
+Note that `PROPOSE_CHANGES_HOT_VIEWS` is not used on the write path for direct
+eviction. The write path instead performs an atomic update (not an eviction) via
+`proposeChangesRedisUpdateScript`, which writes C8, C4, and C6 in one round-trip.
+Only when that Lua script throws a recoverable Redis failure does the endpoint
+reach the fallback path via `requestEvictionAfterUpdateFailure`.
 
 ## Applying This Pattern Elsewhere
 
@@ -186,6 +215,10 @@ The three-tier contract (direct eviction -> fallback event -> 503) applies
 automatically for any strategy passed to this method when direct eviction fails
 with a recoverable Redis availability or timeout error.
 
+For multiple related keys, implement one grouped strategy and make its
+`evict(...)` method atomic, for example through a Lua script. Its `cacheKeys(...)`
+should return every key the event needs to expose for observability.
+
 ### 3. Consumer and scheduler
 
 The existing `OrderCacheEvictionProjectionConsumer` and `RedisRecoveryScheduler`
@@ -199,6 +232,6 @@ scheduler manages the container pause/resume lifecycle.
 - Extended Redis outages that outlast all Kafka retry attempts. The consumer
   pause mechanism keeps the message alive indefinitely, so this is not a concern
   as long as Redis eventually recovers.
-- Multiple cache keys per write. If a single write must evict more than one key,
-  each key should be attempted independently and a separate fallback event should
-  be emitted per recoverable Redis eviction failure.
+- Cross-system atomicity. The database write and Redis eviction are still
+  separate systems. The fallback event guarantees retry after a committed write;
+  it does not make PostgreSQL and Redis one transaction.

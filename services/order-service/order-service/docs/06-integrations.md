@@ -81,9 +81,10 @@ event cannot be recorded. Same-key retries replay the stored response and repeat
 the eviction path, so duplicate assignment events are not emitted.
 
 The `OrderCacheEvictionProjectionConsumer` also listens to `order-events` for
-`OrderCacheEvictionRequested`. It evicts C2 for those deliberate cache eviction
-events. General driver assignment events are ignored by this consumer, so a
-delayed `DriverAssigned`/`DriverReplaced`/`DriverUnassigned`/
+`OrderCacheEvictionRequested`. It dispatches those deliberate cache eviction
+events by `data.cacheName`, currently including C2 and
+`CANCELLED_ORDER_HOT_VIEWS`. General driver assignment events are ignored by this
+consumer, so a delayed `DriverAssigned`/`DriverReplaced`/`DriverUnassigned`/
 `DriverAssignmentDeclined` event does not delete a freshly rebuilt C2 snapshot.
 The consumer uses MANUAL ack mode: if Redis is unavailable or the Redis command
 times out during eviction, the container pauses and the offset is not committed.
@@ -112,4 +113,4 @@ Store clients use:
 
 ## Integration Status
 
-The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, and `ready` actions are implemented through the shared lifecycle service. Driver detail and lifecycle actions (`detail`, `pickup`, `arrive`, `complete`, `decline`) are implemented through `DriverOrderLifecycleService`. Internal driver assignment actions (`assign-driver`, `unassign-driver`) are implemented through `InternalDriverAssignmentService`. Order-created, lifecycle, and driver-assignment business events are written to `outbox_event` for Debezium publishing. Deliberate `OrderCacheEvictionRequested` events can also be consumed back by order-service to evict C2 Redis snapshots after recoverable Redis direct-eviction failures. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. The remaining store write methods and remaining internal lifecycle service methods are pending. The delivery-arrival Kafka consumer, Debezium runtime deployment, and WebSocket broker are pending.
+The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, `ready`, and `cancel` actions are implemented through the shared lifecycle service. Store `/cancel` requires `Idempotency-Key`, writes the lifecycle event and idempotent command record in the same transaction, and then uses `CANCELLED_ORDER_HOT_VIEWS` to atomically remove C1/C1b memberships and delete C2/C3/C4/C6 through the recoverable Redis fallback pattern. Driver detail and lifecycle actions (`detail`, `pickup`, `arrive`, `complete`, `decline`) are implemented through `DriverOrderLifecycleService`. Internal driver assignment actions (`assign-driver`, `unassign-driver`) are implemented through `InternalDriverAssignmentService`. Order-created, lifecycle, and driver-assignment business events are written to `outbox_event` for Debezium publishing. Deliberate `OrderCacheEvictionRequested` events can also be consumed back by order-service to evict Redis hot views after recoverable Redis direct-eviction failures. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. Store `propose-changes` and remaining internal lifecycle service methods are pending. The delivery-arrival Kafka consumer, Debezium runtime deployment, and WebSocket broker are pending.

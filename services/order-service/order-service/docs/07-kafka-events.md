@@ -25,7 +25,8 @@
 | `order-events` | `DriverReplaced` | after an assigned driver is replaced by another driver |
 | `order-events` | `DriverUnassigned` | after an internal caller removes the assigned driver |
 | `order-events` | `DriverAssignmentDeclined` | after an assigned driver declines before pickup |
-| `order-events` | `OrderCacheEvictionRequested` | after direct C2 eviction fails because Redis is unavailable or the Redis result is unknown |
+| `order-events` | `OrderProposedToCustomer` | after the store proposes item changes to the customer |
+| `order-events` | `OrderCacheEvictionRequested` | after direct Redis hot-view eviction fails because Redis is unavailable or the Redis result is unknown |
 
 Order-service records produced events in the local `outbox_event` table. Debezium
 is responsible for reading the database transaction log and publishing those
@@ -203,7 +204,7 @@ If a replay happens after a partial Redis failure, the cache write-through path 
 
 The Redis lock owner value comes from `order-service.instance-id`. If it is not configured, the service uses `${spring.application.name}-${random.uuid}`, which gives each running replica a distinct owner value.
 
-The checkout handler is covered by unit tests for successful creation, processed-event duplicate handling, duplicate cart handling, validation failures, failure release, lock contention, and release failure. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding. The cache-eviction projection consumer is covered by unit tests for raw event deserialization, unsupported event skipping, general driver-event skipping, C2 eviction for `OrderCacheEvictionRequested`, Redis failure pause behavior, and acknowledgment contract.
+The checkout handler is covered by unit tests for successful creation, processed-event duplicate handling, duplicate cart handling, validation failures, failure release, lock contention, and release failure. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding. The cache-eviction projection consumer is covered by unit tests for raw event deserialization, unsupported event skipping, general driver-event skipping, strategy dispatch for `OrderCacheEvictionRequested`, Redis failure pause behavior, and acknowledgment contract.
 
 ## Design Rule
 

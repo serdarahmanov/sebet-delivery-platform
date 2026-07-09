@@ -236,10 +236,12 @@ Payload `data` shape:
 }
 ```
 
-`OrderCacheEvictionRequested` is emitted only when direct C2 eviction fails
+`OrderCacheEvictionRequested` is emitted only when direct Redis eviction fails
 because Redis is unavailable or the Redis command result is unknown after a
-committed driver assignment or decline write. It is a technical event for
-order-service cache maintenance, not a business lifecycle event.
+committed write that requires explicit cache cleanup. Current producers include
+driver assignment/decline C2 eviction and store-cancel grouped hot-view eviction.
+It is a technical event for order-service cache maintenance, not a business
+lifecycle event.
 
 Payload `data` shape:
 
@@ -248,6 +250,7 @@ Payload `data` shape:
   "orderId": "order-id",
   "cacheName": "C2",
   "cacheKey": "order:order-id",
+  "cacheKeys": ["order:order-id"],
   "reason": "DRIVER_ASSIGNMENT_CHANGED",
   "sourceAction": "INTERNAL_ASSIGN_DRIVER",
   "idempotencyKey": "idempotency-key",

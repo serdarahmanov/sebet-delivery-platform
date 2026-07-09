@@ -162,6 +162,32 @@ class OrderEventOutboxWriterTest {
     }
 
     @Test
+    void saveOrderProposedToCustomerEmitsProposedEvent() throws Exception {
+        OrderEntity order = order(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OffsetDateTime proposedAt = OffsetDateTime.parse("2026-07-09T10:00:00Z");
+        String itemsJson = "[{\"productId\":\"p1\",\"productName\":\"Apples\"}]";
+
+        writer.saveOrderProposedToCustomer(order, itemsJson, proposedAt);
+
+        ArgumentCaptor<OutboxEventEntity> captor = ArgumentCaptor.forClass(OutboxEventEntity.class);
+        verify(outboxEventRepository).save(captor.capture());
+        OutboxEventEntity event = captor.getValue();
+        JsonNode payload = objectMapper.readTree(event.getPayload());
+
+        assertThat(event.getEventType()).isEqualTo("OrderProposedToCustomer");
+        assertThat(event.getAggregateType()).isEqualTo("Order");
+        assertThat(event.getAggregateId()).isEqualTo(order.getId().toString());
+        assertThat(event.getEventKey()).isEqualTo(order.getId().toString());
+        assertThat(event.getOccurredAt()).isEqualTo(proposedAt);
+        assertThat(payload.path("eventType").asText()).isEqualTo("OrderProposedToCustomer");
+        assertThat(payload.path("data").path("orderId").asText()).isEqualTo(order.getId().toString());
+        assertThat(payload.path("data").path("customerId").asText()).isEqualTo("customer-1");
+        assertThat(payload.path("data").path("storeId").asText()).isEqualTo("store-1");
+        assertThat(payload.path("data").path("itemsJson").asText()).isEqualTo(itemsJson);
+        assertThat(payload.path("data").path("proposedAt").asText()).isEqualTo(proposedAt.toString());
+    }
+
+    @Test
     void saveOrderCacheEvictionRequestedEmitsCacheEvictionEvent() throws Exception {
         String orderId = UUID.randomUUID().toString();
         OffsetDateTime requestedAt = OffsetDateTime.parse("2026-07-08T10:30:00Z");
@@ -193,6 +219,7 @@ class OrderEventOutboxWriterTest {
         assertThat(payload.path("data").path("orderId").asText()).isEqualTo(orderId);
         assertThat(payload.path("data").path("cacheName").asText()).isEqualTo("C2");
         assertThat(payload.path("data").path("cacheKey").asText()).isEqualTo("order:" + orderId);
+        assertThat(payload.path("data").path("cacheKeys").get(0).asText()).isEqualTo("order:" + orderId);
         assertThat(payload.path("data").path("reason").asText()).isEqualTo("DRIVER_ASSIGNMENT_CHANGED");
         assertThat(payload.path("data").path("sourceAction").asText()).isEqualTo("INTERNAL_ASSIGN_DRIVER");
         assertThat(payload.path("data").path("idempotencyKey").asText()).isEqualTo("idem-1");

@@ -33,7 +33,7 @@ Implemented:
 - driver detail and lifecycle endpoints: detail, pickup, arrive, complete, and decline
 - internal driver assignment endpoints: assign, replace, and unassign
 - order event outbox writes for Debezium publishing
-- idempotent driver assignment and decline writes
+- idempotent driver assignment, decline, and store cancel writes
 - deliberate Redis C2 eviction fallback events and consumer
 - repository, order creation, and Kafka listener integration tests
 - global exception handler for controller-handled exceptions

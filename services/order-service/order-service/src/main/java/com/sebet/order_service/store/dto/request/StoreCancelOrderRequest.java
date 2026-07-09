@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
  * Request body for cancelling an already-accepted order.
  *
  * Endpoint : POST /api/v1/store/orders/{orderId}/cancel
+ * Header   : Idempotency-Key is required.
  *
  * Valid when the order is in one of these post-acceptance statuses:
  *   {@code CONFIRMED}                  — store accepted but can no longer fulfil.

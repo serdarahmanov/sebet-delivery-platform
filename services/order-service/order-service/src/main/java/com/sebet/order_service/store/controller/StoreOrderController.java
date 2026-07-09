@@ -237,8 +237,8 @@ public class StoreOrderController {
      *
      * Valid pre-conditions : {@code CONFIRMED} or {@code AWAITING_CUSTOMER_RESPONSE}.
      * Transition           : → CANCELLED
-     * Side effects         : clears Cache 1 (user active orders), Cache 1b (store active orders),
-     *                        Cache 2 (order snapshot), Cache 4 (status).
+     * Side effects         : atomically removes C1/C1b memberships and clears C2, C3, C4,
+     *                        and C6 through the cache-eviction fallback pattern.
      *
      * Semantically distinct from POST /reject, which is a pre-acceptance refusal on a
      * PENDING order.  Use this endpoint when the store has already committed to the order
@@ -248,16 +248,19 @@ public class StoreOrderController {
      * {@code STORE_UNABLE_TO_FULFIL}) — pre-acceptance reasons are rejected at the
      * service layer.
      *
+     * Requires Idempotency-Key.
      * Returns 409 Conflict  if the order is not in CONFIRMED or AWAITING_CUSTOMER_RESPONSE status.
+     * Returns 409 Conflict  if the Idempotency-Key was reused with a different request body.
      * Returns 404 Not Found if the order does not belong to this store.
      */
     @PostMapping("/{orderId}/cancel")
     public ResponseEntity<StoreCancelOrderResponse> cancelOrder(
             @RequestHeader("X-Store-Id") String storeId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @PathVariable String orderId,
             @RequestBody @Valid StoreCancelOrderRequest request
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderLifecycleService.cancelOrder(storeId, orderId, request, idempotencyKey));
     }
 
     // ── Propose changes ──────────────────────────────────────────────────────
@@ -286,8 +289,9 @@ public class StoreOrderController {
     public ResponseEntity<StoreProposeOrderChangesResponse> proposeOrderChanges(
             @RequestHeader("X-Store-Id") String storeId,
             @PathVariable String orderId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @RequestBody @Valid ProposeOrderChangesRequest request
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(storeOrderLifecycleService.proposeChanges(storeId, orderId, request, idempotencyKey));
     }
 }

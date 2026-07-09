@@ -20,9 +20,10 @@ The project currently has 240 order-service tests covering:
 - Customer status reads fallback to PostgreSQL when C4 has an invalid status value.
 - `CustomerOrderQueryService` integration tests against real Postgres and Redis containers covering the full read path: history feed, active orders, smart router, delivered/cancelled flows, ownership checks, and C4 expiry fallback.
 - `StoreOrderQueryService` unit tests covering history, active orders, scheduled orders, detail mapping, proposal merge, status cache reads, stale Redis fallback, DB fallback, and wrong-store ownership hiding.
-- `OrderLifecycleService` unit tests for store `accept`, `reject`, and `ready` transitions, invalid transitions, wrong-store ownership hiding, and invalid UUID handling.
-- `OrderLifecycleRedisUpdater` unit tests for status updates, `PACKED` timeline append behavior, duplicate timeline prevention, and cancellation hot-view cleanup.
-- `StoreOrderLifecycleService` unit tests for full `OUT_OF_STOCK` reject validation and rejection metadata persistence.
+- `OrderLifecycleService` unit tests for store `accept`, `reject`, `ready`, and `cancel` transitions, invalid transitions, wrong-store ownership hiding, and invalid UUID handling.
+- `OrderLifecycleRedisUpdater` unit tests for status updates, `PACKED` timeline append behavior, duplicate timeline prevention, cancellation hot-view cleanup, and store-cancel grouped fallback routing.
+- `CancelledOrderHotViewsCacheEvictionStrategy` unit tests for C1/C1b/C2/C3/C4/C6 key computation and atomic script execution.
+- `StoreOrderLifecycleService` unit tests for full `OUT_OF_STOCK` reject validation, rejection metadata persistence, store cancel reason mapping, cancel metadata persistence, idempotent command execution, and replay-triggered Redis eviction.
 - repository tests for optimistic locking and per-order product uniqueness.
 - Redis store membership repository tests for active and scheduled TTL refresh.
 - Redis order status repository tests for customer/store ownership serialization.
@@ -77,7 +78,7 @@ Compile without running tests:
 - Redis hot-view writes for ASAP and scheduled order creation
 - Redis store membership TTL refresh
 - Redis order status customer/store ownership serialization
-- store accept/reject/ready lifecycle transitions
+- store accept/reject/ready/cancel lifecycle transitions, including idempotent store cancel replay
 - store read service mapping and ownership checks
 - customer active-order wrong-owner snapshot filtering
 - `OUT_OF_STOCK` rejection validation against persisted order items

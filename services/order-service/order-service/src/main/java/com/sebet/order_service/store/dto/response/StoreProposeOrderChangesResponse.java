@@ -21,7 +21,7 @@ import java.util.List;
  * was submitted.  A push notification is dispatched to the customer at this point.
  *
  * Returns 409 Conflict  if the order is not in CONFIRMED status.
- * Returns 403 Forbidden if the order does not belong to this store.
+ * Returns 404 Not Found if the order does not belong to this store.
  */
 public record StoreProposeOrderChangesResponse(
 

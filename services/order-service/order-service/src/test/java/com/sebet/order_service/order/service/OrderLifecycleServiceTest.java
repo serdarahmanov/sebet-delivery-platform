@@ -1,9 +1,12 @@
 package com.sebet.order_service.order.service;
 
 import com.sebet.order_service.cache.service.OrderLifecycleRedisUpdater;
+import com.sebet.order_service.cache.service.OrderProposeChangesRedisUpdater;
 import com.sebet.order_service.order.event.OrderEventOutboxWriter;
 import com.sebet.order_service.persistence.entity.OrderEntity;
+import com.sebet.order_service.persistence.entity.OrderProposalEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
+import com.sebet.order_service.persistence.repository.OrderProposalRepository;
 import com.sebet.order_service.persistence.repository.OrderRepository;
 import com.sebet.order_service.persistence.repository.OrderStatusHistoryRepository;
 import com.sebet.order_service.shared.enums.OrderCancellationReason;
@@ -36,12 +39,16 @@ class OrderLifecycleServiceTest {
     private final OrderStatusHistoryRepository orderStatusHistoryRepository = mock(OrderStatusHistoryRepository.class);
     private final OrderLifecycleRedisUpdater orderLifecycleRedisUpdater = mock(OrderLifecycleRedisUpdater.class);
     private final OrderEventOutboxWriter orderEventOutboxWriter = mock(OrderEventOutboxWriter.class);
+    private final OrderProposalRepository orderProposalRepository = mock(OrderProposalRepository.class);
+    private final OrderProposeChangesRedisUpdater orderProposeChangesRedisUpdater = mock(OrderProposeChangesRedisUpdater.class);
 
     private final OrderLifecycleService service = new OrderLifecycleService(
             orderRepository,
             orderStatusHistoryRepository,
             orderLifecycleRedisUpdater,
-            orderEventOutboxWriter
+            orderEventOutboxWriter,
+            orderProposalRepository,
+            orderProposeChangesRedisUpdater
     );
 
     @Test
@@ -144,6 +151,71 @@ class OrderLifecycleServiceTest {
     }
 
     @Test
+    void storeCancel_movesConfirmedOrderToCancelledAndSetsCancellationFields() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.CONFIRMED);
+        when(orderRepository.findByIdAndStoreId(id, "store-1")).thenReturn(Optional.of(order));
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+
+        OrderLifecycleResult result = service.storeCancel(
+                id.toString(),
+                "store-1",
+                OrderCancellationReason.STORE_CLOSED,
+                "{\"note\":\"closed early\"}"
+        );
+
+        assertThat(result.previousStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getCancelledBy()).isEqualTo(OrderCancelledBy.STORE);
+        assertThat(order.getCancellationReason()).isEqualTo(OrderCancellationReason.STORE_CLOSED);
+        assertThat(order.getCancelledAt()).isEqualTo(result.changedAt());
+
+        ArgumentCaptor<OrderStatusHistoryEntity> historyCaptor =
+                ArgumentCaptor.forClass(OrderStatusHistoryEntity.class);
+        verify(orderStatusHistoryRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getFromStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(historyCaptor.getValue().getToStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo("STORE_CLOSED");
+        assertThat(historyCaptor.getValue().getMetadataJson()).isEqualTo("{\"note\":\"closed early\"}");
+
+        verify(orderLifecycleRedisUpdater).applyTransition(
+                order,
+                OrderStatus.CANCELLED,
+                result.changedAt().toString(),
+                "STORE_CANCEL_ORDER"
+        );
+        verify(orderEventOutboxWriter).saveOrderStatusTransition(
+                order,
+                OrderStatus.CONFIRMED,
+                OrderStatus.CANCELLED,
+                result.changedAt(),
+                "STORE",
+                "store-1",
+                "STORE_CLOSED",
+                "{\"note\":\"closed early\"}"
+        );
+    }
+
+    @Test
+    void storeCancel_allowsAwaitingCustomerResponseOrder() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        when(orderRepository.findByIdAndStoreId(id, "store-1")).thenReturn(Optional.of(order));
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+
+        OrderLifecycleResult result = service.storeCancel(
+                id.toString(),
+                "store-1",
+                OrderCancellationReason.STORE_UNABLE_TO_FULFIL,
+                "{\"note\":null}"
+        );
+
+        assertThat(result.previousStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
     void storeAccept_throwsConflictWhenOrderIsNotPending() {
         UUID id = UUID.randomUUID();
         when(orderRepository.findByIdAndStoreId(id, "store-1"))
@@ -155,6 +227,26 @@ class OrderLifecycleServiceTest {
         verify(orderRepository, never()).saveAndFlush(any());
         verify(orderStatusHistoryRepository, never()).save(any());
         verify(orderLifecycleRedisUpdater, never()).applyTransition(any(), any(), any());
+        verify(orderEventOutboxWriter, never()).saveOrderStatusTransition(
+                any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void storeCancel_throwsConflictWhenOrderIsNotCancellableByStore() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndStoreId(id, "store-1"))
+                .thenReturn(Optional.of(order(id, OrderStatus.PENDING)));
+
+        assertThatThrownBy(() -> service.storeCancel(
+                id.toString(),
+                "store-1",
+                OrderCancellationReason.STORE_CLOSED,
+                null
+        )).isInstanceOf(OrderInvalidTransitionException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderStatusHistoryRepository, never()).save(any());
+        verify(orderLifecycleRedisUpdater, never()).applyTransition(any(), any(), any(), any());
         verify(orderEventOutboxWriter, never()).saveOrderStatusTransition(
                 any(), any(), any(), any(), any(), any(), any(), any());
     }
@@ -346,6 +438,111 @@ class OrderLifecycleServiceTest {
 
         verify(orderRepository, never()).findById(any());
     }
+
+    // ── storeProposeChangesWithoutRedisUpdate ─────────────────────────────────
+
+    @Test
+    void storeProposeChangesWithoutRedisUpdate_transitionsConfirmedToAwaitingAndPersistsAll() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.CONFIRMED);
+        when(orderRepository.findByIdAndStoreId(id, "store-1")).thenReturn(Optional.of(order));
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+        OffsetDateTime proposedAt = OffsetDateTime.parse("2026-07-09T10:00:00Z");
+
+        OrderLifecycleResult result = service.storeProposeChangesWithoutRedisUpdate(
+                id.toString(), "store-1", "[{\"productId\":\"p1\"}]", proposedAt);
+
+        assertThat(result.previousStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(result.changedAt()).isEqualTo(proposedAt);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(order.getUpdatedAt()).isEqualTo(proposedAt);
+
+        ArgumentCaptor<OrderStatusHistoryEntity> historyCaptor =
+                ArgumentCaptor.forClass(OrderStatusHistoryEntity.class);
+        verify(orderStatusHistoryRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getFromStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(historyCaptor.getValue().getToStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(historyCaptor.getValue().getChangedByType()).isEqualTo("STORE");
+        assertThat(historyCaptor.getValue().getChangedById()).isEqualTo("store-1");
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo("STORE_PROPOSED_CHANGES");
+        assertThat(historyCaptor.getValue().getCreatedAt()).isEqualTo(proposedAt);
+
+        ArgumentCaptor<OrderProposalEntity> proposalCaptor =
+                ArgumentCaptor.forClass(OrderProposalEntity.class);
+        verify(orderProposalRepository).save(proposalCaptor.capture());
+        assertThat(proposalCaptor.getValue().getOrderId()).isEqualTo(id);
+        assertThat(proposalCaptor.getValue().getStoreId()).isEqualTo("store-1");
+        assertThat(proposalCaptor.getValue().getProposedAt()).isEqualTo(proposedAt);
+        assertThat(proposalCaptor.getValue().getItemsJson()).isEqualTo("[{\"productId\":\"p1\"}]");
+
+        verify(orderEventOutboxWriter).saveOrderProposedToCustomer(
+                order, "[{\"productId\":\"p1\"}]", proposedAt);
+    }
+
+    @Test
+    void storeProposeChangesWithoutRedisUpdate_throwsInvalidTransitionWhenNotConfirmed() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndStoreId(id, "store-1"))
+                .thenReturn(Optional.of(order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE)));
+
+        assertThatThrownBy(() -> service.storeProposeChangesWithoutRedisUpdate(
+                id.toString(), "store-1", "[]", OffsetDateTime.now()))
+                .isInstanceOf(OrderInvalidTransitionException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderStatusHistoryRepository, never()).save(any());
+        verify(orderProposalRepository, never()).save(any());
+        verify(orderEventOutboxWriter, never()).saveOrderProposedToCustomer(any(), any(), any());
+    }
+
+    @Test
+    void storeProposeChangesWithoutRedisUpdate_throwsNotFoundWhenOrderDoesNotBelongToStore() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndStoreId(id, "store-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.storeProposeChangesWithoutRedisUpdate(
+                id.toString(), "store-1", "[]", OffsetDateTime.now()))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    // ── updateProposeChangesRedisViews ────────────────────────────────────────
+
+    @Test
+    void updateProposeChangesRedisViews_loadsOrderAndProposalAndCallsUpdater() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(UUID.randomUUID())
+                .orderId(id)
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\"}]")
+                .build();
+        when(orderRepository.findByIdAndStoreId(id, "store-1")).thenReturn(Optional.of(order));
+        when(orderProposalRepository.findByOrderId(id)).thenReturn(Optional.of(proposal));
+
+        service.updateProposeChangesRedisViews(id.toString(), "store-1", "idem-1");
+
+        verify(orderProposeChangesRedisUpdater).apply(order, proposal, "idem-1");
+    }
+
+    @Test
+    void updateProposeChangesRedisViews_throwsNotFoundWhenProposalIsMissing() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndStoreId(id, "store-1"))
+                .thenReturn(Optional.of(order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE)));
+        when(orderProposalRepository.findByOrderId(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.updateProposeChangesRedisViews(id.toString(), "store-1", "idem-1"))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderProposeChangesRedisUpdater, never()).apply(any(), any(), any());
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
 
     private OrderEntity order(UUID id, OrderStatus status) {
         return order(id, status, null);

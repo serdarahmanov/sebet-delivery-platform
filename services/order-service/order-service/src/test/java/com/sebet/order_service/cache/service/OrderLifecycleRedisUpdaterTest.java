@@ -33,6 +33,7 @@ class OrderLifecycleRedisUpdaterTest {
     private final ActiveOrdersRedisRepository activeOrdersRedisRepository = mock(ActiveOrdersRedisRepository.class);
     private final StoreActiveOrdersRedisRepository storeActiveOrdersRedisRepository = mock(StoreActiveOrdersRedisRepository.class);
     private final VerificationCodeRedisRepository verificationCodeRedisRepository = mock(VerificationCodeRedisRepository.class);
+    private final OrderCacheEvictionService orderCacheEvictionService = mock(OrderCacheEvictionService.class);
 
     private final OrderLifecycleRedisUpdater updater = new OrderLifecycleRedisUpdater(
             orderStatusRedisRepository,
@@ -41,7 +42,8 @@ class OrderLifecycleRedisUpdaterTest {
             orderTrackingRedisRepository,
             activeOrdersRedisRepository,
             storeActiveOrdersRedisRepository,
-            verificationCodeRedisRepository
+            verificationCodeRedisRepository,
+            orderCacheEvictionService
     );
 
     @Test
@@ -96,6 +98,27 @@ class OrderLifecycleRedisUpdaterTest {
         verify(orderTrackingRedisRepository).delete(orderId);
         verify(orderStatusRedisRepository).delete(orderId);
         verify(orderTimelineRedisRepository).delete(orderId);
+        verify(orderCacheEvictionService, never()).evictCancelledOrderHotViewsOrRequestEviction(any(), any(), any());
+    }
+
+    @Test
+    void cancelledTransitionUsesFallbackPatternForC2WhenSourceActionIsProvided() {
+        OrderEntity order = order();
+        String orderId = order.getId().toString();
+
+        updater.applyTransition(order, OrderStatus.CANCELLED, "2026-07-07T10:00:00Z", "STORE_CANCEL_ORDER", "idem-1");
+
+        verify(orderCacheEvictionService).evictCancelledOrderHotViewsOrRequestEviction(
+                orderId,
+                "STORE_CANCEL_ORDER",
+                "idem-1"
+        );
+        verify(orderRedisRepository, never()).delete(any());
+        verify(activeOrdersRedisRepository, never()).remove(any(), any());
+        verify(storeActiveOrdersRedisRepository, never()).remove(any(), any());
+        verify(orderTrackingRedisRepository, never()).delete(any());
+        verify(orderStatusRedisRepository, never()).delete(any());
+        verify(orderTimelineRedisRepository, never()).delete(any());
     }
 
     @Test

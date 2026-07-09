@@ -10,8 +10,10 @@ import com.sebet.order_service.shared.enums.OrderStatus;
  * Transition: CONFIRMED | AWAITING_CUSTOMER_RESPONSE → CANCELLED
  * Returns  : StoreCancelOrderResponse
  *
+ * Requires Idempotency-Key.
  * Returns 409 Conflict  if the order is not in CONFIRMED or AWAITING_CUSTOMER_RESPONSE status.
- * Returns 403 Forbidden if the order does not belong to this store.
+ * Returns 409 Conflict  if the Idempotency-Key is reused with a different request body.
+ * Returns 404 Not Found if the order does not belong to this store.
  */
 public record StoreCancelOrderResponse(
         String orderId,

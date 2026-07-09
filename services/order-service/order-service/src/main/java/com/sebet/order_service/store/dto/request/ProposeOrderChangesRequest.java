@@ -7,7 +7,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.PositiveOrZero;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -81,14 +80,15 @@ public record ProposeOrderChangesRequest(
             /**
              * How much the store can actually provide, in the same {@code unit}.
              *
-             * Null   → item is completely out of stock; customer sees "remove or cancel".
-             * &gt; 0  → partial stock; customer additionally sees "accept X instead of Y".
+             * Null  → item is completely out of stock; customer sees "remove or cancel".
+             * &gt; 0 → partial stock; customer additionally sees "accept X instead of Y".
+             * 0 is not valid — use null when nothing is available.
              *
              * Must be strictly less than {@code requestedQuantity} — if the store has
              * equal or more stock the item should not appear in this list.
              * Enforced at the service layer.
              */
-            @PositiveOrZero
+            @Positive
             BigDecimal availableQuantity
 
     ) {}

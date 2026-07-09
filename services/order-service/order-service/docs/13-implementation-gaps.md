@@ -24,10 +24,12 @@ Implemented:
   - `PENDING -> CONFIRMED` through `POST /api/v1/store/orders/{orderId}/accept`
   - `PENDING -> CANCELLED` through `POST /api/v1/store/orders/{orderId}/reject`
   - `CONFIRMED -> READY_FOR_PICKUP` through `POST /api/v1/store/orders/{orderId}/ready`
+  - `CONFIRMED` or `AWAITING_CUSTOMER_RESPONSE` -> `CANCELLED` through `POST /api/v1/store/orders/{orderId}/cancel`
 - Store lifecycle writes use `orders.version` optimistic locking so concurrent lifecycle updates cannot both commit.
 - Store `OUT_OF_STOCK` rejection validation verifies that item details are present, belong to the order, match requested quantity/unit, and provide a valid partial-stock quantity when applicable.
 - Store `OUT_OF_STOCK` rejection validation rejects duplicate product ids and null list elements.
-- Store rejection metadata is persisted into `order_status_history.metadata_json`.
+- Store rejection and cancellation metadata is persisted into `order_status_history.metadata_json`.
+- Store `/cancel` requires `Idempotency-Key`; the order update, lifecycle outbox event, and idempotent command record commit together, and idempotent replay reruns Redis cleanup.
 - `OrderLifecycleService` implements driver lifecycle transitions:
   - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY` through `POST /api/v1/driver/orders/{orderId}/pickup`
   - `OUT_FOR_DELIVERY -> ARRIVED` through `POST /api/v1/driver/orders/{orderId}/arrive`
@@ -39,7 +41,7 @@ Implemented:
   - `POST /api/v1/internal/orders/{orderId}/assign-driver` assigns a driver, idempotently returns the same driver assignment, or replaces a different driver.
   - `POST /api/v1/internal/orders/{orderId}/unassign-driver` clears the assigned driver on non-terminal orders.
   - Assignment writes persist the order change, `DriverAssigned`, `DriverReplaced`, or `DriverUnassigned` outbox event, and idempotent command record in the same database transaction, then try to evict C2 Redis after commit.
-- `OrderCacheEvictionService` handles direct C2 eviction and fallback event recording:
+- `OrderCacheEvictionService` handles direct Redis hot-view eviction and fallback event recording:
   - direct Redis eviction success returns normally
   - Redis connection failure or command timeout writes `OrderCacheEvictionRequested` and lets the endpoint return success
   - non-Redis runtime failures propagate normally
@@ -50,16 +52,21 @@ Implemented:
   - dispatches `OrderCacheEvictionRequested` events to the matching `CacheEvictionStrategy` by `data.cacheName`; unknown cache names are skipped with a warning
   - uses MANUAL ack mode; pauses container on `RedisConnectionFailureException` or `QueryTimeoutException` without committing the offset
   - `RedisRecoveryScheduler` probes Redis every 10 seconds (500 ms timeout) and resumes the container when Redis responds
-- `CacheEvictionStrategy` interface allows adding eviction support for any cache key by implementing a single `@Component`; `C2CacheEvictionStrategy` is the current registered implementation
+- `CacheEvictionStrategy` interface allows adding eviction support for any cache key or grouped hot-view cleanup by implementing a single `@Component`; current implementations are `C2CacheEvictionStrategy`, `CancelledOrderHotViewsCacheEvictionStrategy`, and `ProposeChangesHotViewsEvictionStrategy`
 - Driver transitions verify `driverId` ownership, returning `403 DRIVER_NOT_ASSIGNED` on mismatch.
 - `arrive` generates a 2-digit verification code written to C7 (30-min TTL) and persisted to `order_status_history.metadata_json` as a permanent fallback.
 - `complete` validates the submitted code against C7, falling back to `order_status_history` if C7 has expired. Wrong code returns `400`; code not found in either store returns `404 VERIFICATION_CODE_NOT_FOUND`.
 - `delivered_at` is set to the same `changedAt` instant as the history record, preventing split-timestamp inconsistency.
 - Redis lifecycle transition updates extended: C4 status, C6 timeline (`PACKED`, `ON_THE_WAY`, `ARRIVED`, `DELIVERED`), cancellation hot-view cleanup, and delivered hot-view cleanup (C1, C1b, C2, C3, C7 cleared; C4 and C6 retained).
+- Store `/cancel` uses `CANCELLED_ORDER_HOT_VIEWS` after commit and on idempotent replay. The strategy removes C1/C1b memberships and deletes C2, C3, C4, and C6 in one Redis Lua script. Recoverable Redis failures or timeouts write one `OrderCacheEvictionRequested` event with all target `cacheKeys`; non-Redis failures propagate.
+- `StoreOrderLifecycleService.proposeChanges` and `OrderLifecycleService.storeProposeChangesWithoutRedisUpdate` / `updateProposeChangesRedisViews` implement `POST /api/v1/store/orders/{orderId}/propose-changes`:
+  - validates that `productName`, `unit`, and `requestedQuantity` in each proposed item match the persisted order item
+  - transitions `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE`, appends status history, persists the proposal record and `OrderProposedToCustomer` outbox event, and stores the idempotent command response in one database transaction
+  - atomically updates C8, C4, and C6 via `proposeChangesRedisUpdateScript` after commit; recoverable Redis failures fall back to `requestEvictionAfterUpdateFailure` with `PROPOSE_CHANGES_HOT_VIEWS`, which writes one `OrderCacheEvictionRequested` event without attempting direct eviction
+  - `OrderProposeChangesRedisUpdater` builds and executes the Lua script; `ProposeChangesHotViewsEvictionStrategy` handles grouped eviction of C8 + C4 + C6 for the consumer path
 
 Pending:
 
-- remaining store write methods: `cancel`, `propose-changes`
 - remaining lifecycle transitions: customer cancel, scheduled activation, proposal resolution, and delivery cancellation paths
 - proposals write path (`respond-to-changes`)
 - scheduled order update write path
@@ -79,9 +86,15 @@ Implemented:
 - unique `(order_id, product_id)` order item constraint
 - repository tests
 
+Implemented:
+
+- JPA entity for order proposals (`OrderProposalEntity`).
+- Flyway migration `V4__create_order_proposals_table.sql`.
+- Unique `order_id` constraint on `order_proposals` (one active proposal per order).
+
 Pending:
 
-- durable proposal/refund/verification fields if required by later workflows
+- durable refund/verification-code extensions if required by later workflows
 - further indexes based on actual query patterns
 
 ## Kafka

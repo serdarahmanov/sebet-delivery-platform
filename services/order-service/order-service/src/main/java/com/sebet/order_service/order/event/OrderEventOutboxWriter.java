@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -34,6 +35,7 @@ public class OrderEventOutboxWriter {
     private static final String DRIVER_UNASSIGNED = "DriverUnassigned";
     private static final String DRIVER_ASSIGNMENT_DECLINED = "DriverAssignmentDeclined";
     private static final String ORDER_CACHE_EVICTION_REQUESTED = "OrderCacheEvictionRequested";
+    private static final String ORDER_PROPOSED_TO_CUSTOMER = "OrderProposedToCustomer";
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
@@ -87,6 +89,17 @@ public class OrderEventOutboxWriter {
                 iso(order.getCancelledAt())
         );
         saveEvent(order, statusTransitionEventType(previousStatus, newStatus), changedAt, data);
+    }
+
+    public void saveOrderProposedToCustomer(OrderEntity order, String itemsJson, OffsetDateTime proposedAt) {
+        OrderProposedToCustomerEventData data = new OrderProposedToCustomerEventData(
+                order.getId().toString(),
+                order.getCustomerId(),
+                order.getStoreId(),
+                itemsJson,
+                iso(proposedAt)
+        );
+        saveEvent(order, ORDER_PROPOSED_TO_CUSTOMER, proposedAt, data);
     }
 
     public void saveDriverAssignmentDeclined(
@@ -167,10 +180,38 @@ public class OrderEventOutboxWriter {
             String failureMessage,
             OffsetDateTime requestedAt
     ) {
+        saveOrderCacheEvictionRequested(
+                orderId,
+                cacheName,
+                cacheKey,
+                List.of(cacheKey),
+                reason,
+                sourceAction,
+                idempotencyKey,
+                failureType,
+                failureMessage,
+                requestedAt
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void saveOrderCacheEvictionRequested(
+            String orderId,
+            String cacheName,
+            String cacheKey,
+            List<String> cacheKeys,
+            String reason,
+            String sourceAction,
+            String idempotencyKey,
+            String failureType,
+            String failureMessage,
+            OffsetDateTime requestedAt
+    ) {
         OrderCacheEvictionRequestedEventData data = new OrderCacheEvictionRequestedEventData(
                 orderId,
                 cacheName,
                 cacheKey,
+                cacheKeys,
                 reason,
                 sourceAction,
                 idempotencyKey,

@@ -62,4 +62,66 @@ public class OrderRedisConfig {
         script.setResultType(Long.class);
         return script;
     }
+
+    /**
+     * Cache 8 + Cache 4 + Cache 6 — atomic propose-changes hot-view update.
+     *
+     * Atomically writes the new proposal to C8, updates the order status in C4,
+     * and appends the new timeline entry to C6.
+     *
+     * KEYS[1] = order:proposals:{orderId}   (C8)
+     * KEYS[2] = order:status:{orderId}      (C4)
+     * KEYS[3] = order:timeline:{orderId}    (C6)
+     * ARGV[1] = proposal JSON (C8 value)
+     * ARGV[2] = C8 TTL seconds
+     * ARGV[3] = status value (C4 value: "STATUS|userId|storeId")
+     * ARGV[4] = C4 TTL seconds
+     * ARGV[5] = timeline entry JSON (C6 value to append)
+     * ARGV[6] = C6 TTL seconds
+     * Returns: 1 always.
+     */
+    @Bean
+    public RedisScript<Long> proposeChangesRedisUpdateScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(
+                "redis.call('set', KEYS[1], ARGV[1], 'ex', tonumber(ARGV[2])) " +
+                "redis.call('set', KEYS[2], ARGV[3], 'ex', tonumber(ARGV[4])) " +
+                "redis.call('rpush', KEYS[3], ARGV[5]) " +
+                "redis.call('expire', KEYS[3], tonumber(ARGV[6])) " +
+                "return 1"
+        );
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * Atomic cancellation hot-view cleanup.
+     *
+     * KEYS[1] = user:active_orders:{userId}
+     * KEYS[2] = store:active_orders:{storeId}
+     * KEYS[3] = order:{orderId}
+     * KEYS[4] = order:tracking:{orderId}
+     * KEYS[5] = order:status:{orderId}
+     * KEYS[6] = order:timeline:{orderId}
+     * ARGV[1] = orderId
+     * Returns: 1 always.
+     */
+    @Bean
+    public RedisScript<Long> evictCancelledOrderHotViewsScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(
+                "redis.call('srem', KEYS[1], ARGV[1]) " +
+                "if redis.call('scard', KEYS[1]) == 0 then " +
+                "  redis.call('del', KEYS[1]) " +
+                "end " +
+                "redis.call('srem', KEYS[2], ARGV[1]) " +
+                "if redis.call('scard', KEYS[2]) == 0 then " +
+                "  redis.call('del', KEYS[2]) " +
+                "end " +
+                "redis.call('del', KEYS[3], KEYS[4], KEYS[5], KEYS[6]) " +
+                "return 1"
+        );
+        script.setResultType(Long.class);
+        return script;
+    }
 }
