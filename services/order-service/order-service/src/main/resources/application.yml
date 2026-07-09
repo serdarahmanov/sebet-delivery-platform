@@ -29,3 +29,9 @@ order-service:
         multiplier: 2.0
         max-interval-ms: 10000
         max-attempts: 3
+    order-events:
+      topic: order-events
+      group-id: order-service-driver-assignment-projection
+      auto-startup: false
+      dlt-topic: order-events.DLT
+      validate-topics: false

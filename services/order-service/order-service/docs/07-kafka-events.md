@@ -21,6 +21,11 @@
 | `order-events` | `OrderPickedUp` | after driver pickup |
 | `order-events` | `OrderArrived` | after driver arrival |
 | `order-events` | `OrderDelivered` | after delivery verification |
+| `order-events` | `DriverAssigned` | after an order receives its first driver assignment |
+| `order-events` | `DriverReplaced` | after an assigned driver is replaced by another driver |
+| `order-events` | `DriverUnassigned` | after an internal caller removes the assigned driver |
+| `order-events` | `DriverAssignmentDeclined` | after an assigned driver declines before pickup |
+| `order-events` | `OrderCacheEvictionRequested` | after direct C2 eviction fails because Redis is unavailable or the Redis result is unknown |
 
 Order-service records produced events in the local `outbox_event` table. Debezium
 is responsible for reading the database transaction log and publishing those
@@ -112,13 +117,29 @@ Currently implemented in the flow:
 - map it to `CreateOrderCommand`
 - persist order, order items, and initial status history in PostgreSQL
 - insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction
-- insert specialized lifecycle events into `outbox_event` in the same PostgreSQL transaction
+- insert specialized lifecycle and assignment events into `outbox_event` in the same PostgreSQL transaction
 - handle duplicate checkout events through `processed_events.event_id` and `orders.cart_id` idempotency, while recording the processed event only after Redis initialization succeeds
 - initialize the Redis snapshot, status, timeline, and active/scheduled membership after commit
 
 ## Current Implementation Status
 
 Spring Kafka dependencies are present. The checkout event consumer is implemented as a raw `String` listener and delegates valid envelopes to `CheckoutConfirmedHandler`, which enforces idempotency, acquires the Redis checkout lock, maps the event, and calls `OrderCreationService`. It can consume real Kafka events when its listener startup property is enabled and `spring.kafka.bootstrap-servers` points to a broker.
+
+The cache-eviction projection consumer is also implemented as a raw `String`
+listener on `order-events`. It handles only `OrderCacheEvictionRequested` with
+`data.cacheName`. The handler dispatches to the registered `CacheEvictionStrategy`
+for that cache name; the strategy performs the eviction so the next Redis-first
+read rebuilds from PostgreSQL. General driver assignment events are
+ignored by this consumer to avoid deleting a C2 snapshot that was already
+successfully evicted and then rebuilt.
+
+The consumer uses a dedicated `cacheEvictionContainerFactory` with `MANUAL` ack
+mode. On success the offset is committed immediately. On
+`RedisConnectionFailureException` or `QueryTimeoutException`, the container is
+paused and the offset is not committed, so the same message is replayed when the
+container resumes. `RedisRecoveryScheduler` probes Redis every 10 seconds using
+a dedicated connection with a 500 ms timeout; when Redis responds, the container
+is resumed automatically.
 
 Checkout event retry and DLT handling are implemented with Spring Kafka container infrastructure:
 
@@ -149,9 +170,20 @@ order-service.kafka.checkout-events.retry.max-interval-ms
 order-service.kafka.checkout-events.retry.max-attempts
 ```
 
-When `validate-topics` is enabled, startup checks that both the source topic and
-DLT topic exist and that the DLT topic has at least as many partitions as the
-source topic. This is enabled by default in the production profile.
+Driver-assignment projection listener settings are controlled by:
+
+```yaml
+order-service.kafka.order-events.topic
+order-service.kafka.order-events.group-id
+order-service.kafka.order-events.auto-startup
+order-service.kafka.order-events.dlt-topic
+order-service.kafka.order-events.validate-topics
+```
+
+When `validate-topics` is enabled for either consumed topic, startup checks that
+both the source topic and DLT topic exist and that the DLT topic has at least as
+many partitions as the source topic. This is enabled by default in the
+production profile.
 
 DLT publish failure policy:
 
@@ -171,7 +203,7 @@ If a replay happens after a partial Redis failure, the cache write-through path 
 
 The Redis lock owner value comes from `order-service.instance-id`. If it is not configured, the service uses `${spring.application.name}-${random.uuid}`, which gives each running replica a distinct owner value.
 
-The checkout handler is covered by unit tests for successful creation, processed-event duplicate handling, duplicate cart handling, validation failures, failure release, lock contention, and release failure. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding.
+The checkout handler is covered by unit tests for successful creation, processed-event duplicate handling, duplicate cart handling, validation failures, failure release, lock contention, and release failure. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding. The cache-eviction projection consumer is covered by unit tests for raw event deserialization, unsupported event skipping, general driver-event skipping, C2 eviction for `OrderCacheEvictionRequested`, Redis failure pause behavior, and acknowledgment contract.
 
 ## Design Rule
 

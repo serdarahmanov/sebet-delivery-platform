@@ -37,3 +37,9 @@ order-service:
         multiplier: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_RETRY_MULTIPLIER:2.0}
         max-interval-ms: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_RETRY_MAX_INTERVAL_MS:10000}
         max-attempts: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_RETRY_MAX_ATTEMPTS:3}
+    order-events:
+      topic: ${ORDER_SERVICE_KAFKA_ORDER_EVENTS_TOPIC:order-events}
+      group-id: ${ORDER_SERVICE_KAFKA_ORDER_EVENTS_GROUP_ID:order-service-driver-assignment-projection}
+      auto-startup: ${ORDER_SERVICE_KAFKA_ORDER_EVENTS_AUTO_STARTUP:true}
+      dlt-topic: ${ORDER_SERVICE_KAFKA_ORDER_EVENTS_DLT_TOPIC:order-events.DLT}
+      validate-topics: ${ORDER_SERVICE_KAFKA_ORDER_EVENTS_VALIDATE_TOPICS:true}

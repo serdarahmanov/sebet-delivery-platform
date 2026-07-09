@@ -30,7 +30,9 @@ Implemented in `shared/exception/ErrorResponse.java` (Java record). MVC intercep
 | `DriverNotAssignedException` | 403 | `DRIVER_NOT_ASSIGNED` |
 | `VerificationCodeNotFoundException` | 404 | `VERIFICATION_CODE_NOT_FOUND` |
 | `OrderInvalidTransitionException` | 409 | `ORDER_INVALID_TRANSITION` |
+| `IdempotencyKeyConflictException` | 409 | `IDEMPOTENCY_KEY_CONFLICT` |
 | `OptimisticLockingFailureException` | 409 | `ORDER_INVALID_TRANSITION` |
+| `CacheInvalidationFailedException` | 503 | `CACHE_INVALIDATION_FAILED` |
 | `UnsupportedOperationException` | 501 | `NOT_IMPLEMENTED` |
 | `Exception` (fallback) | 500 | `INTERNAL_ERROR` |
 
@@ -41,14 +43,10 @@ Unhandled exceptions are logged at ERROR level before returning `INTERNAL_ERROR`
 - `400 Bad Request`: invalid request body, failed bean validation, missing/blank identity header, or submitted verification code does not match stored code.
 - `403 Forbidden`: invalid `X-Internal-Key` value, or `X-Driver-Id` does not match the driver assigned to the order.
 - `404 Not Found`: no handler matched the requested path, the order does not exist, order ownership should be hidden, or verification code not found in Redis or DB.
-- `409 Conflict`: invalid lifecycle transition or stale concurrent lifecycle update.
+- `409 Conflict`: invalid lifecycle transition, stale concurrent lifecycle update, or reused `Idempotency-Key` with a different request body.
+- `503 Service Unavailable`: a write committed, direct C2 cache eviction failed with a recoverable Redis failure, and the fallback `OrderCacheEvictionRequested` event could not be recorded; retry the same request with the same `Idempotency-Key`.
 - `501 Not Implemented`: endpoint contract exists but business logic is not yet built.
 - `500 Internal Server Error`: unexpected server failure.
-
-Planned (not yet enforced by handler):
-
-- `409 Conflict`: modification/cancellation cutoff passed.
-- `503 Service Unavailable`: downstream/event infrastructure unavailable where retry is appropriate.
 
 ## Input Validation
 
@@ -57,6 +55,13 @@ Checkout envelope fields are validated in `CheckoutConfirmedHandler` before orde
 `CreateOrderCommand` validates internal order creation invariants such as required identifiers, required money fields, and `scheduledFor` consistency. Invalid values throw `IllegalArgumentException`, which the global handler maps to `400 VALIDATION_ERROR` for REST paths and the Kafka error handler routes to retry/DLT behavior for listener paths.
 
 For checkout events, `processed_events` is recorded only after order creation and post-commit Redis initialization both succeed. That keeps cache-repair replays possible if Redis fails after the database commit.
+
+Driver assignment writes and driver decline require `Idempotency-Key`. Reusing
+the same key with the same request returns the stored response and repeats the
+C2 eviction path. If Redis is unavailable or the Redis command result is
+unknown, `OrderCacheEvictionRequested` is recorded and the API can still return
+success. Non-Redis runtime failures propagate normally. Reusing the same key
+with a different request returns `409 IDEMPOTENCY_KEY_CONFLICT`.
 
 `deliveryAddressJson` is validated as parseable JSON in `OrderCreationService.createNewOrder()` before any database write. An unparseable value throws `IllegalArgumentException`, preventing a later `IllegalStateException` in `OrderCreationRedisWriter`.
 

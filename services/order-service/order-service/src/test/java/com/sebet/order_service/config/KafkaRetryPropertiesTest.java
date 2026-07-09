@@ -31,4 +31,24 @@ class KafkaRetryPropertiesTest {
         assertThat(properties.getRetry().getMaxIntervalMs()).isEqualTo(5000);
         assertThat(properties.getRetry().getMaxAttempts()).isEqualTo(7);
     }
+
+    @Test
+    void bindsOrderEventsKafkaProperties() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("order-service.kafka.order-events.topic", "order-events-custom")
+                .withProperty("order-service.kafka.order-events.group-id", "projection-group")
+                .withProperty("order-service.kafka.order-events.auto-startup", "true")
+                .withProperty("order-service.kafka.order-events.dlt-topic", "order-events-custom.DLT")
+                .withProperty("order-service.kafka.order-events.validate-topics", "true");
+
+        OrderEventsKafkaProperties properties = Binder.get(environment)
+                .bind("order-service.kafka.order-events", OrderEventsKafkaProperties.class)
+                .orElseThrow(() -> new AssertionError("Order event Kafka properties did not bind"));
+
+        assertThat(properties.getTopic()).isEqualTo("order-events-custom");
+        assertThat(properties.getGroupId()).isEqualTo("projection-group");
+        assertThat(properties.isAutoStartup()).isTrue();
+        assertThat(properties.getDltTopic()).isEqualTo("order-events-custom.DLT");
+        assertThat(properties.isValidateTopics()).isTrue();
+    }
 }

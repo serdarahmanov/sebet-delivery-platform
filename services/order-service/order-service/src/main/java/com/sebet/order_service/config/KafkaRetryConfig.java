@@ -17,10 +17,11 @@ import org.springframework.util.backoff.ExponentialBackOff;
 
 @Configuration
 @RequiredArgsConstructor
-@EnableConfigurationProperties(KafkaRetryProperties.class)
+@EnableConfigurationProperties({KafkaRetryProperties.class, OrderEventsKafkaProperties.class})
 public class KafkaRetryConfig {
 
     private final KafkaRetryProperties properties;
+    private final OrderEventsKafkaProperties orderEventsProperties;
 
     @Bean
     public DeadLetterPublishingRecoverer deadLetterPublishingRecoverer(
@@ -28,8 +29,15 @@ public class KafkaRetryConfig {
     ) {
         return new DeadLetterPublishingRecoverer(
                 kafkaOperations,
-                (record, exception) -> new TopicPartition(properties.getDltTopic(), record.partition())
+                (record, exception) -> new TopicPartition(dltTopic(record.topic()), record.partition())
         );
+    }
+
+    private String dltTopic(String sourceTopic) {
+        if (orderEventsProperties.getTopic().equals(sourceTopic)) {
+            return orderEventsProperties.getDltTopic();
+        }
+        return properties.getDltTopic();
     }
 
     @Bean

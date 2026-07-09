@@ -2,7 +2,7 @@
 
 ## Current Tests
 
-The project currently has 183 order-service tests covering:
+The project currently has 240 order-service tests covering:
 
 - Redis key generation.
 - MVC interceptor tests for `X-User-Id`, `X-Store-Id`, and `X-Internal-Key`.
@@ -13,6 +13,8 @@ The project currently has 183 order-service tests covering:
 - Checkout event mapper unit tests.
 - Checkout event handler lock, validation, and idempotency unit tests.
 - Checkout Kafka listener and retry/DLT integration tests against real brokers.
+- Cache-eviction projection consumer unit tests for deliberate C2 eviction events, strategy registry dispatch, unknown cache name handling, and Redis failure pause behavior.
+- Redis recovery scheduler unit tests for pause detection, recovery resume, connection failure, and timeout handling.
 - `CustomerOrderQueryService` unit tests covering all 10 read methods: cache hit, DB fallback, ownership denial, timeline building, order number format, and batch item queries.
 - Customer active-order reads filter out stale C1 entries whose C2 snapshot belongs to another user.
 - Customer status reads fallback to PostgreSQL when C4 has an invalid status value.
@@ -82,6 +84,17 @@ Compile without running tests:
 - invalid lifecycle transition handling
 - lifecycle Redis status/timeline/cancellation/delivery updates
 - driver pickup/arrive/complete lifecycle transitions
+- driver delivery detail and decline assignment behavior
+- stale C2 driver mismatch fallback to DB before returning `DRIVER_NOT_ASSIGNED`
+- internal driver assign/replace/unassign behavior
+- internal driver assignment idempotency and C2 eviction fallback behavior
+- driver decline idempotency and C2 eviction fallback behavior
+- cache-eviction projection consumer strategy dispatch, unknown cacheName skipping, and multi-strategy routing
+- `OrderCacheEvictionRequested` outbox event payload writing
+- C2 eviction coordinator direct-delete, Redis-failure fallback-event, fallback-failure, non-Redis failure propagation, and generic strategy routing behavior
+- idempotent command recording, replay, and request-conflict behavior
+- `DriverAssignmentDeclined` outbox event payload writing
+- `DriverAssigned`, `DriverReplaced`, and `DriverUnassigned` outbox event payload writing
 - driver ownership verification (`DRIVER_NOT_ASSIGNED`)
 - verification code generation, C7 write, and DB metadata persistence
 - verification code validation against C7 with DB fallback
@@ -98,8 +111,7 @@ Add unit tests for:
 - active-order removal Lua behavior
 - lock release Lua behavior
 - customer write service behavior when implemented
-- driver detail and decline service behavior when implemented
-- internal lifecycle service behavior when implemented
+- remaining internal lifecycle service behavior when implemented
 - `OrderLifecycleRedisUpdater` for `OUT_FOR_DELIVERY`, `ARRIVED`, and `DELIVERED` transitions
 
 ## Controller Tests To Add

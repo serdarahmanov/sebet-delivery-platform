@@ -71,6 +71,12 @@ Required header:
 X-Driver-Id: <driver-id>
 ```
 
+Additional required header for assignment decline:
+
+```http
+Idempotency-Key: <unique-command-key>
+```
+
 Endpoint groups:
 
 - `GET  /api/v1/driver/orders/{orderId}` - delivery detail (C2 + C4)
@@ -96,6 +102,12 @@ Required header:
 
 ```http
 X-Internal-Key: <shared-secret>
+```
+
+Driver assignment writes also require:
+
+```http
+Idempotency-Key: <unique-command-key>
 ```
 
 Not exposed to customers, stores, or drivers. Intended for the dispatch service,
@@ -171,34 +183,42 @@ The following store endpoints are still pending:
 - `POST /api/v1/store/orders/{orderId}/cancel`
 - `POST /api/v1/store/orders/{orderId}/propose-changes`
 
-### Driver API - Write Endpoints
+### Driver API - Endpoints
 
-The following driver lifecycle endpoints are implemented through `DriverOrderLifecycleService` and `OrderLifecycleService`:
+The following driver endpoints are implemented through `DriverOrderLifecycleService` and `OrderLifecycleService` where status transitions are required:
 
 | Endpoint | Transition | Status |
 |---|---|---|
+| `GET /api/v1/driver/orders/{orderId}` | read assigned delivery detail from C2 + C4, DB fallback | implemented |
 | `POST /api/v1/driver/orders/{orderId}/pickup` | `READY_FOR_PICKUP -> OUT_FOR_DELIVERY` | implemented |
 | `POST /api/v1/driver/orders/{orderId}/arrive` | `OUT_FOR_DELIVERY -> ARRIVED` | implemented |
 | `POST /api/v1/driver/orders/{orderId}/complete` | `ARRIVED -> DELIVERED` | implemented |
+| `POST /api/v1/driver/orders/{orderId}/decline` | clears `driverId`, status unchanged | implemented |
 
-Driver ownership is verified on every write: the `driverId` on the order must match `X-Driver-Id`. A mismatch returns `403 DRIVER_NOT_ASSIGNED`. Orders that do not exist return `404 ORDER_NOT_FOUND`. Invalid transitions return `409 ORDER_INVALID_TRANSITION`.
+Driver ownership is verified on every driver endpoint: the `driverId` on the order must match `X-Driver-Id`. A mismatch returns `403 DRIVER_NOT_ASSIGNED`. Orders that do not exist return `404 ORDER_NOT_FOUND`. Invalid transitions return `409 ORDER_INVALID_TRANSITION`.
+
+`/decline` is idempotent by `Idempotency-Key`. The order update, `DriverAssignmentDeclined` outbox event, and idempotency record commit in the same database transaction. After commit, order-service tries to evict C2 (`order:{orderId}`) so the next Redis-first read rebuilds from PostgreSQL. If Redis is unavailable or the Redis command result is unknown, order-service writes a deliberate `OrderCacheEvictionRequested` outbox event and still returns `200`. Non-Redis runtime failures propagate normally. If that fallback event cannot be recorded, the endpoint returns `503 CACHE_INVALIDATION_FAILED`; callers should retry the same request with the same idempotency key.
 
 `/arrive` generates a 2-digit zero-padded verification code (`"00"`–`"99"`), writes it to C7 (30-minute TTL), and persists it to `order_status_history.metadata_json` as a permanent fallback.
 
 `/complete` requires the driver to submit the code shown to the customer. The code is validated against C7, falling back to `order_status_history` if C7 has expired. A wrong code returns `400 VALIDATION_ERROR`. A missing code (not in Redis and not in DB) returns `404 VERIFICATION_CODE_NOT_FOUND`.
 
-The following driver endpoints are still pending:
-
-- `GET /api/v1/driver/orders/{orderId}` - delivery detail
-- `POST /api/v1/driver/orders/{orderId}/decline` - unassigns driver
-
 ### Internal API
 
-Internal controller defines DTO contracts, but service methods are still pending and throw:
+The following internal driver-assignment endpoints are implemented through `InternalDriverAssignmentService`:
 
-```text
-UnsupportedOperationException("Not implemented yet")
-```
+| Endpoint | Behavior | Status |
+|---|---|---|
+| `POST /api/v1/internal/orders/{orderId}/assign-driver` | assigns a new driver, idempotently returns the existing assignment for the same driver, or replaces a different driver | implemented |
+| `POST /api/v1/internal/orders/{orderId}/unassign-driver` | clears the current driver on any non-terminal order | implemented |
+
+Assignment writes are idempotent by `Idempotency-Key`. The order update, assignment outbox event, and idempotency record commit in the same database transaction. After commit, order-service tries to evict C2 (`order:{orderId}`) so the next Redis-first read rebuilds from PostgreSQL. If Redis is unavailable or the Redis command result is unknown, order-service writes a deliberate `OrderCacheEvictionRequested` outbox event and still returns `200`. Non-Redis runtime failures propagate normally. If that fallback event cannot be recorded, the endpoint returns `503 CACHE_INVALIDATION_FAILED`; callers should retry the same request with the same idempotency key. Reusing the same key for a different request body returns `409 IDEMPOTENCY_KEY_CONFLICT`.
+
+The following internal endpoints still throw `UnsupportedOperationException`:
+
+- `POST /api/v1/internal/orders/{orderId}/system-cancel`
+- `POST /api/v1/internal/orders/{orderId}/activate-scheduled`
+- `POST /api/v1/internal/orders/{orderId}/cancel-proposal`
 
 ## Response Design
 
@@ -222,4 +242,5 @@ Current and planned status code conventions:
 - `401 Unauthorized`: missing `X-Internal-Key` header on internal endpoints.
 - `403 Forbidden`: invalid `X-Internal-Key` value, or `X-Driver-Id` does not match the driver assigned to the order.
 - `404 Not Found`: order/proposal/code not found, or wrong order owner where ownership should be hidden.
-- `409 Conflict`: invalid lifecycle transition or modification outside allowed window.
+- `409 Conflict`: invalid lifecycle transition, modification outside allowed window, or reused `Idempotency-Key` with a different request.
+- `503 Service Unavailable`: write committed, direct C2 cache eviction failed with a recoverable Redis failure, and the fallback `OrderCacheEvictionRequested` event could not be recorded; retry with the same `Idempotency-Key`.

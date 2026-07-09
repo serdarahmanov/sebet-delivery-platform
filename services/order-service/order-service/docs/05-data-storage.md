@@ -13,8 +13,10 @@ Implemented:
 - JPA entities for orders, order items, and order status history.
 - JPA entity for Debezium outbox events.
 - JPA entity for processed checkout event ids.
+- JPA entity for idempotent REST commands.
 - Spring Data JPA repositories.
 - Flyway migration `V1__create_order_tables.sql` covering the base order schema, outbox events, processed-events idempotency, enum rename, and the extended order/item schema.
+- Flyway migration `V3__create_idempotent_commands.sql` for REST write idempotency.
 - JSONB mapping for the delivery address snapshot and status metadata.
 - Unique `orders.cart_id` idempotency constraint.
 - Unique per-order `order_items.line_number` constraint.
@@ -79,6 +81,7 @@ The current durable schema stores:
 - `order_status_history`: append-style status transition records.
 - `outbox_event`: append-only order business events for Debezium publication.
 - `processed_events`: consumed integration event ids already applied by order-service.
+- `idempotent_commands`: committed REST write command responses keyed by action and `Idempotency-Key`.
 
 Important constraints and indexes:
 
@@ -96,6 +99,9 @@ Important constraints and indexes:
 - outbox indexes on `(aggregate_type, aggregate_id)`, `(event_type, created_at)`, and `created_at`.
 - `processed_events.event_id` primary key prevents the same checkout event from being applied twice.
 - `processed_events(event_type, processed_at)` supports operational review of processed integration events.
+- `idempotent_commands.id` primary key.
+- `idempotent_commands(action, idempotency_key)` unique index prevents duplicate command execution for the same action.
+- `idempotent_commands(order_id, action, created_at desc)` supports operational lookup by order/action.
 
 Delivery address is stored as `jsonb` because it is a checkout-time snapshot owned by the order. Store coordinates are stored as explicit numeric columns for easier querying and mapping. The combined V1 migration backfills legacy `store_lat` and `store_lng` values to `0` before the NOT NULL constraint is applied.
 
@@ -118,6 +124,18 @@ missing or unusable per-order cache data.
 Customer active-order reads skip C1 entries whose C2 snapshot is missing or
 belongs to a different user. Single-order customer reads still hide wrong-owner
 access with `404 ORDER_NOT_FOUND`.
+
+Driver assignment writes and driver decline write the order change, outbox event,
+and idempotent command record in one PostgreSQL transaction. After that commit,
+they try to evict C2. If Redis is unavailable or the eviction result is unknown
+because the Redis command times out, they write an
+`OrderCacheEvictionRequested` outbox event in a new transaction and return
+success. Non-Redis runtime failures are allowed to propagate. A
+`503 CACHE_INVALIDATION_FAILED` is returned only if direct eviction fails with a
+recoverable Redis failure and the fallback eviction event cannot be recorded. A
+retry with the same `Idempotency-Key` replays the stored response and repeats
+the eviction path, without duplicating the order update or business outbox
+event.
 
 JPA Open Session in View is disabled. Service methods should load and map all
 data needed by REST responses inside explicit transactional boundaries.

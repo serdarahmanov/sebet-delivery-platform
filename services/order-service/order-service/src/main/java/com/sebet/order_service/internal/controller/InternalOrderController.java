@@ -8,12 +8,14 @@ import com.sebet.order_service.internal.dto.response.AssignDriverResponse;
 import com.sebet.order_service.internal.dto.response.CancelProposalResponse;
 import com.sebet.order_service.internal.dto.response.SystemCancelOrderResponse;
 import com.sebet.order_service.internal.dto.response.UnassignDriverResponse;
+import com.sebet.order_service.internal.service.InternalDriverAssignmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -52,6 +54,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/internal/orders")
 @RequiredArgsConstructor
 public class InternalOrderController {
+
+    private final InternalDriverAssignmentService driverAssignmentService;
 
     // ── Assign driver ────────────────────────────────────────────────────────
 
@@ -93,10 +97,11 @@ public class InternalOrderController {
      */
     @PostMapping("/{orderId}/assign-driver")
     public ResponseEntity<AssignDriverResponse> assignDriver(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @PathVariable String orderId,
             @RequestBody @Valid AssignDriverRequest request
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(driverAssignmentService.assignDriver(orderId, request, idempotencyKey));
     }
 
     // ── Unassign driver ──────────────────────────────────────────────────────
@@ -128,10 +133,11 @@ public class InternalOrderController {
      */
     @PostMapping("/{orderId}/unassign-driver")
     public ResponseEntity<UnassignDriverResponse> unassignDriver(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @PathVariable String orderId,
             @RequestBody @Valid UnassignDriverRequest request
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(driverAssignmentService.unassignDriver(orderId, request, idempotencyKey));
     }
 
     // ── System cancel ────────────────────────────────────────────────────────

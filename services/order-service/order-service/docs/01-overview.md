@@ -30,8 +30,11 @@ Implemented:
 - customer read service methods
 - store read service methods
 - first store lifecycle write endpoints: accept, reject, and ready
-- driver lifecycle write endpoints: pickup, arrive, and complete
+- driver detail and lifecycle endpoints: detail, pickup, arrive, complete, and decline
+- internal driver assignment endpoints: assign, replace, and unassign
 - order event outbox writes for Debezium publishing
+- idempotent driver assignment and decline writes
+- deliberate Redis C2 eviction fallback events and consumer
 - repository, order creation, and Kafka listener integration tests
 - global exception handler for controller-handled exceptions
 - input validation for amount fields and delivery address JSON
@@ -40,8 +43,7 @@ Pending:
 
 - customer write service methods
 - remaining store write service methods
-- driver detail and decline service methods
-- internal service methods
+- remaining internal service methods
 - Debezium connector deployment/runtime wiring for publishing outbox events
 - delivery-arrival Kafka consumer
 - WebSocket/STOMP broker configuration

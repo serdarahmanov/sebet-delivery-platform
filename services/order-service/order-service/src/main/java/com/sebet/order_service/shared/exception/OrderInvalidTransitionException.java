@@ -7,4 +7,8 @@ public class OrderInvalidTransitionException extends RuntimeException {
     public OrderInvalidTransitionException(String orderId, OrderStatus currentStatus, OrderStatus targetStatus) {
         super("Order " + orderId + " cannot transition from " + currentStatus + " to " + targetStatus);
     }
+
+    public OrderInvalidTransitionException(String orderId, OrderStatus currentStatus, String action) {
+        super("Order " + orderId + " cannot perform " + action + " while in " + currentStatus);
+    }
 }

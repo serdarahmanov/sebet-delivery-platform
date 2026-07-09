@@ -8,6 +8,8 @@ import com.sebet.order_service.persistence.repository.OutboxEventRepository;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -27,6 +29,11 @@ public class OrderEventOutboxWriter {
     private static final String ORDER_PICKED_UP = "OrderPickedUp";
     private static final String ORDER_ARRIVED = "OrderArrived";
     private static final String ORDER_DELIVERED = "OrderDelivered";
+    private static final String DRIVER_ASSIGNED = "DriverAssigned";
+    private static final String DRIVER_REPLACED = "DriverReplaced";
+    private static final String DRIVER_UNASSIGNED = "DriverUnassigned";
+    private static final String DRIVER_ASSIGNMENT_DECLINED = "DriverAssignmentDeclined";
+    private static final String ORDER_CACHE_EVICTION_REQUESTED = "OrderCacheEvictionRequested";
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
@@ -82,6 +89,98 @@ public class OrderEventOutboxWriter {
         saveEvent(order, statusTransitionEventType(previousStatus, newStatus), changedAt, data);
     }
 
+    public void saveDriverAssignmentDeclined(
+            OrderEntity order,
+            String driverId,
+            OffsetDateTime declinedAt,
+            String reason
+    ) {
+        DriverAssignmentDeclinedEventData data = new DriverAssignmentDeclinedEventData(
+                order.getId().toString(),
+                order.getCustomerId(),
+                order.getStoreId(),
+                driverId,
+                order.getStatus(),
+                iso(declinedAt),
+                reason
+        );
+        saveEvent(order, DRIVER_ASSIGNMENT_DECLINED, declinedAt, data);
+    }
+
+    public void saveDriverAssigned(OrderEntity order, String driverId, OffsetDateTime assignedAt) {
+        DriverAssignedEventData data = new DriverAssignedEventData(
+                order.getId().toString(),
+                order.getCustomerId(),
+                order.getStoreId(),
+                driverId,
+                order.getStatus(),
+                iso(assignedAt)
+        );
+        saveEvent(order, DRIVER_ASSIGNED, assignedAt, data);
+    }
+
+    public void saveDriverReplaced(
+            OrderEntity order,
+            String previousDriverId,
+            String newDriverId,
+            OffsetDateTime replacedAt
+    ) {
+        DriverReplacedEventData data = new DriverReplacedEventData(
+                order.getId().toString(),
+                order.getCustomerId(),
+                order.getStoreId(),
+                previousDriverId,
+                newDriverId,
+                order.getStatus(),
+                iso(replacedAt)
+        );
+        saveEvent(order, DRIVER_REPLACED, replacedAt, data);
+    }
+
+    public void saveDriverUnassigned(
+            OrderEntity order,
+            String previousDriverId,
+            OffsetDateTime unassignedAt,
+            String reason
+    ) {
+        DriverUnassignedEventData data = new DriverUnassignedEventData(
+                order.getId().toString(),
+                order.getCustomerId(),
+                order.getStoreId(),
+                previousDriverId,
+                order.getStatus(),
+                iso(unassignedAt),
+                reason
+        );
+        saveEvent(order, DRIVER_UNASSIGNED, unassignedAt, data);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void saveOrderCacheEvictionRequested(
+            String orderId,
+            String cacheName,
+            String cacheKey,
+            String reason,
+            String sourceAction,
+            String idempotencyKey,
+            String failureType,
+            String failureMessage,
+            OffsetDateTime requestedAt
+    ) {
+        OrderCacheEvictionRequestedEventData data = new OrderCacheEvictionRequestedEventData(
+                orderId,
+                cacheName,
+                cacheKey,
+                reason,
+                sourceAction,
+                idempotencyKey,
+                failureType,
+                failureMessage,
+                iso(requestedAt)
+        );
+        saveEvent(orderId, ORDER_CACHE_EVICTION_REQUESTED, requestedAt, data);
+    }
+
     private String orderCreatedEventType(OrderEntity order) {
         if (order.getStatus() == OrderStatus.SCHEDULED) {
             return ORDER_SCHEDULED;
@@ -117,13 +216,21 @@ public class OrderEventOutboxWriter {
     }
 
     private void saveEvent(OrderEntity order, String eventType, OffsetDateTime occurredAt, Object data) {
+        saveEvent(order.getId().toString(), eventType, occurredAt, data, eventVersion(order));
+    }
+
+    private void saveEvent(String orderId, String eventType, OffsetDateTime occurredAt, Object data) {
+        saveEvent(orderId, eventType, occurredAt, data, 1L);
+    }
+
+    private void saveEvent(String orderId, String eventType, OffsetDateTime occurredAt, Object data, long version) {
         UUID eventId = UUID.randomUUID();
         OrderEventEnvelope<Object> envelope = new OrderEventEnvelope<>(
                 eventId.toString(),
                 eventType,
-                order.getId().toString(),
+                orderId,
                 AGGREGATE_TYPE,
-                eventVersion(order),
+                version,
                 iso(occurredAt),
                 SOURCE,
                 data
@@ -132,9 +239,9 @@ public class OrderEventOutboxWriter {
         outboxEventRepository.save(OutboxEventEntity.builder()
                 .id(eventId)
                 .aggregateType(AGGREGATE_TYPE)
-                .aggregateId(order.getId().toString())
+                .aggregateId(orderId)
                 .eventType(eventType)
-                .eventKey(order.getId().toString())
+                .eventKey(orderId)
                 .payload(toJson(envelope))
                 .occurredAt(occurredAt)
                 .build());

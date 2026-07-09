@@ -37,6 +37,13 @@ Kafka checkout topic requirements:
 - The DLT topic must have at least as many partitions as the source checkout topic.
 - Production enables `ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_VALIDATE_TOPICS=true` by default, so the app fails startup when these requirements are not met.
 
+Kafka order-events projection requirements:
+
+- `ORDER_SERVICE_KAFKA_ORDER_EVENTS_TOPIC` must exist when the order cache-eviction projection listener is enabled.
+- `ORDER_SERVICE_KAFKA_ORDER_EVENTS_DLT_TOPIC` must exist.
+- The DLT topic must have at least as many partitions as the source order-events topic.
+- Production enables `ORDER_SERVICE_KAFKA_ORDER_EVENTS_VALIDATE_TOPICS=true` by default.
+
 ## Expected Environment Variables
 
 Use [.env.example](../.env.example) as a starting point.
@@ -51,6 +58,7 @@ Expected categories:
 - consumed topic names
 - produced topic names
 - checkout retry and DLT settings
+- order-events projection topic and DLT settings
 - Debezium connector database host/user/password/slot/publication settings
 
 ## Debezium Outbox Connector

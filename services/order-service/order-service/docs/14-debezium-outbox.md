@@ -165,12 +165,97 @@ OrderReadyForPickup
 OrderPickedUp
 OrderArrived
 OrderDelivered
+DriverAssigned
+DriverReplaced
+DriverUnassigned
+DriverAssignmentDeclined
+OrderCacheEvictionRequested
 ```
 
 `OrderCancelled` is the canonical cancellation event for all cancellation
 sources. Consumers should use payload data such as `cancelledBy`,
 `cancellationReason`, `previousStatus`, and `newStatus` to distinguish the
 business reason.
+
+`DriverAssigned`, `DriverReplaced`, and `DriverUnassigned` are emitted by the
+internal dispatch-facing assignment endpoints. They are not status-transition
+events; the order status remains unchanged.
+
+Payload `data` shapes:
+
+```json
+{
+  "orderId": "order-id",
+  "customerId": "customer-id",
+  "storeId": "store-id",
+  "driverId": "driver-id",
+  "status": "READY_FOR_PICKUP",
+  "assignedAt": "2026-07-08T10:15:00Z"
+}
+```
+
+```json
+{
+  "orderId": "order-id",
+  "customerId": "customer-id",
+  "storeId": "store-id",
+  "previousDriverId": "old-driver-id",
+  "newDriverId": "new-driver-id",
+  "status": "READY_FOR_PICKUP",
+  "replacedAt": "2026-07-08T10:15:00Z"
+}
+```
+
+```json
+{
+  "orderId": "order-id",
+  "customerId": "customer-id",
+  "storeId": "store-id",
+  "previousDriverId": "driver-id",
+  "status": "READY_FOR_PICKUP",
+  "unassignedAt": "2026-07-08T10:15:00Z",
+  "reason": "ADMIN_OVERRIDE"
+}
+```
+
+`DriverAssignmentDeclined` is emitted when an assigned driver declines before
+pickup. It is not a status-transition event; the order status remains unchanged
+and the order becomes available for reassignment.
+
+Payload `data` shape:
+
+```json
+{
+  "orderId": "order-id",
+  "customerId": "customer-id",
+  "storeId": "store-id",
+  "driverId": "driver-id-that-declined",
+  "status": "READY_FOR_PICKUP",
+  "declinedAt": "2026-07-08T10:15:00Z",
+  "reason": "DRIVER_DECLINED"
+}
+```
+
+`OrderCacheEvictionRequested` is emitted only when direct C2 eviction fails
+because Redis is unavailable or the Redis command result is unknown after a
+committed driver assignment or decline write. It is a technical event for
+order-service cache maintenance, not a business lifecycle event.
+
+Payload `data` shape:
+
+```json
+{
+  "orderId": "order-id",
+  "cacheName": "C2",
+  "cacheKey": "order:order-id",
+  "reason": "DRIVER_ASSIGNMENT_CHANGED",
+  "sourceAction": "INTERNAL_ASSIGN_DRIVER",
+  "idempotencyKey": "idempotency-key",
+  "failureType": "RedisConnectionFailureException",
+  "failureMessage": "redis unavailable",
+  "requestedAt": "2026-07-08T10:15:00Z"
+}
+```
 
 ## Payload Scope
 

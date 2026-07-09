@@ -84,6 +84,18 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("ORDER_INVALID_TRANSITION", ex.getMessage()));
     }
 
+    @ExceptionHandler(IdempotencyKeyConflictException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyKeyConflict(IdempotencyKeyConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("IDEMPOTENCY_KEY_CONFLICT", ex.getMessage()));
+    }
+
+    @ExceptionHandler(CacheInvalidationFailedException.class)
+    public ResponseEntity<ErrorResponse> handleCacheInvalidationFailed(CacheInvalidationFailedException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of("CACHE_INVALIDATION_FAILED", ex.getMessage()));
+    }
+
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)

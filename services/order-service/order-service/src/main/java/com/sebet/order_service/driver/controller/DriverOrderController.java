@@ -83,7 +83,7 @@ public class DriverOrderController {
             @RequestHeader("X-Driver-Id") String driverId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(driverOrderLifecycleService.getOrderDetail(driverId, orderId));
     }
 
     // ── Pickup ───────────────────────────────────────────────────────────────
@@ -191,8 +191,9 @@ public class DriverOrderController {
     @PostMapping("/{orderId}/decline")
     public ResponseEntity<DriverDeclineResponse> declineAssignment(
             @RequestHeader("X-Driver-Id") String driverId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(driverOrderLifecycleService.declineAssignment(driverId, orderId, idempotencyKey));
     }
 }
