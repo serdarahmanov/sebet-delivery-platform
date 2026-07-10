@@ -5,6 +5,18 @@ table. The application inserts outbox rows in the same transaction as order
 state changes. Debezium reads the database log and publishes those rows to
 Kafka.
 
+## Deployment Decision
+
+Debezium runs as an **external Kafka Connect connector**, not as an embedded
+engine inside order-service.
+
+Consequence: **order-service contains no outbox relay code**. The service's
+only responsibility is writing rows into `outbox_event` via
+`OrderEventOutboxWriter`, which is already complete. The connector is deployed
+and operated independently of the application. Do not add a `KafkaTemplate`
+publisher, a polling `@Scheduled` relay, or an embedded `DebeziumEngine` to
+this service.
+
 Sample connector configuration:
 
 ```text

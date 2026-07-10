@@ -63,7 +63,7 @@ Implemented:
   - dispatches `OrderCacheEvictionRequested` events to the matching `CacheEvictionStrategy` by `data.cacheName`; unknown cache names are skipped with a warning
   - uses MANUAL ack mode; pauses container on `RedisConnectionFailureException` or `QueryTimeoutException` without committing the offset
   - `RedisRecoveryScheduler` probes Redis every 10 seconds (500 ms timeout) and resumes the container when Redis responds
-- `CacheEvictionStrategy` interface allows adding eviction support for any cache key or grouped hot-view cleanup by implementing a single `@Component`; current implementations are `C2CacheEvictionStrategy`, `CancelledOrderHotViewsCacheEvictionStrategy`, and `ProposeChangesHotViewsEvictionStrategy`
+- `CacheEvictionStrategy` interface allows adding eviction support for any cache key or grouped hot-view cleanup by implementing a single `@Component`; current implementations are `C2CacheEvictionStrategy`, `CancelledOrderHotViewsCacheEvictionStrategy`, `ProposeChangesHotViewsEvictionStrategy`, `CancelActiveProposalHotViewsEvictionStrategy`, and `RespondAcceptHotViewsEvictionStrategy`
 - Driver transitions verify `driverId` ownership, returning `403 DRIVER_NOT_ASSIGNED` on mismatch.
 - `arrive` generates a 2-digit verification code written to C7 (30-min TTL) and persisted to `order_status_history.metadata_json` as a permanent fallback.
 - `complete` validates the submitted code against C7, falling back to `order_status_history` if C7 has expired. Wrong code returns `400`; code not found in either store returns `404 VERIFICATION_CODE_NOT_FOUND`.
@@ -87,15 +87,24 @@ Implemented:
   - appends status history, emits `OrderCancelled`, and stores the idempotent command response in one database transaction
   - after commit and on idempotent replay, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS` (C1, C1b, C2, C3, C4, C6, C8) through the recoverable eviction fallback pattern
 - Any cancellation applied to an order in `AWAITING_CUSTOMER_RESPONSE` (system-cancel, admin-cancel, store cancel) marks the active proposal row as `SYSTEM_CANCELLED` or `STORE_CANCELLED` within the same database transaction.
-- `ProposalStatus` enum tracks the full proposal lifecycle: `ACTIVE`, `CANCELLED`, `TIMED_OUT`, `SYSTEM_CANCELLED`, `STORE_CANCELLED`, `ACCEPTED`, `REJECTED`.
+- `ProposalStatus` enum tracks the full proposal lifecycle: `ACTIVE`, `ACCEPTED`, `APPLIED`, `REJECTED`, `CANCELLED`, `TIMED_OUT`, `SYSTEM_CANCELLED`, `STORE_CANCELLED`.
 - `order_proposals.uq_order_proposals_order_id` unique constraint replaced by a partial unique index (`WHERE status = 'ACTIVE'`) to allow historical proposal rows while enforcing at most one active proposal per order.
+- `CustomerOrderLifecycleService.cancelOrder` implements `POST /api/v1/orders/{orderId}/cancel`:
+  - `PENDING`, `CONFIRMED`, or `SCHEDULED` -> `CANCELLED`; reason fixed to `USER_REQUESTED`
+  - appends status history and emits `OrderCancelled` in one database transaction
+  - after commit, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS` through the recoverable eviction fallback pattern
+- `CustomerOrderLifecycleService.respondToChanges` implements `POST /api/v1/orders/{orderId}/respond-to-changes`:
+  - CANCEL_ORDER path: marks active proposal `REJECTED`, transitions `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`, appends history, emits `OrderCancelled`; Redis cleanup via `CANCELLED_ORDER_HOT_VIEWS` (C8 included in that script)
+  - ACCEPT_ALL / ACCEPT_WITH_MODIFICATIONS path: marks active proposal `ACCEPTED`, validates item decisions against the active proposal, serializes per-item decisions, emits `OrderProposalAccepted` (full pricing + original items + decisions + promo codes); order status unchanged at `AWAITING_CUSTOMER_RESPONSE` until promo service callback
+  - after commit, accept path atomically deletes C8 via `respondAcceptRedisUpdateScript`; recoverable Redis failures fall back to `RESPOND_ACCEPT_HOT_VIEWS`
+  - ACCEPT_WITH_MODIFICATIONS requires non-empty `itemDecisions`; 400 returned when empty
+  - item decision validation: rejects duplicate productIds, unknown productIds, missing decisions for proposed items, `ACCEPT_PROPOSED_QUANTITY` on fully-out-of-stock items, `REQUEST_CUSTOM_QUANTITY` without `customQuantity` or with quantity exceeding available stock
 
 Pending:
 
-- remaining lifecycle transitions: customer cancel, proposal resolution, proposal cancellation, and delivery cancellation paths
-- proposals write paths (`respond-to-changes`, store `cancel-active-proposal`)
+- promo service callback: `POST /api/v1/internal/orders/{orderId}/update-after-proposal` — applies recalculated totals and transitions `AWAITING_CUSTOMER_RESPONSE -> CONFIRMED`; marks proposal `APPLIED`
 - scheduled order update write path
-- hot-view repair/eviction policy for non-checkout write paths beyond the implemented store and driver assignment/lifecycle transitions
+- delivery cancellation path
 
 ## Database
 
@@ -142,7 +151,12 @@ Implemented:
 Pending:
 
 - delivery arrival consumer
-- Debezium connector deployment/runtime wiring
+
+Not in scope for this service:
+
+- Debezium connector deployment — Debezium runs as an external Kafka Connect
+  connector. Order-service has no relay code to implement. See
+  `docs/14-debezium-outbox.md` for connector config and the deployment decision.
 
 ## Background Jobs
 

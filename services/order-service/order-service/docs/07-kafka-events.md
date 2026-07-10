@@ -26,6 +26,7 @@
 | `order-events` | `DriverUnassigned` | after an internal caller removes the assigned driver |
 | `order-events` | `DriverAssignmentDeclined` | after an assigned driver declines before pickup |
 | `order-events` | `OrderProposedToCustomer` | after the store proposes item changes to the customer |
+| `order-events` | `OrderProposalAccepted` | after the customer accepts the store's change proposal (ACCEPT_ALL or ACCEPT_WITH_MODIFICATIONS); promo service recalculates discounts |
 | `order-events` | `OrderCacheEvictionRequested` | after direct Redis hot-view eviction fails because Redis is unavailable or the Redis result is unknown |
 
 Order-service records produced events in the local `outbox_event` table. Debezium

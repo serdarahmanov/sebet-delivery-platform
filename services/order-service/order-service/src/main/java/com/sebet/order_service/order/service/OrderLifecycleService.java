@@ -1,12 +1,18 @@
 package com.sebet.order_service.order.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sebet.order_service.cache.dto.OrderProposalsCacheDto;
 import com.sebet.order_service.cache.service.OrderLifecycleRedisUpdater;
 import com.sebet.order_service.cache.service.OrderCancelActiveProposalRedisUpdater;
 import com.sebet.order_service.cache.service.OrderProposeChangesRedisUpdater;
 import com.sebet.order_service.order.event.OrderEventOutboxWriter;
+import com.sebet.order_service.order.event.OrderProposalAcceptedEventData;
 import com.sebet.order_service.persistence.entity.OrderEntity;
+import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderProposalEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
+import com.sebet.order_service.persistence.repository.OrderItemRepository;
 import com.sebet.order_service.persistence.repository.OrderProposalRepository;
 import com.sebet.order_service.persistence.repository.OrderRepository;
 import com.sebet.order_service.persistence.repository.OrderStatusHistoryRepository;
@@ -25,7 +31,13 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.OffsetDateTime;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -35,6 +47,7 @@ public class OrderLifecycleService {
     private static final String ACTOR_STORE = "STORE";
     private static final String ACTOR_DRIVER = "DRIVER";
     private static final String ACTOR_SYSTEM = "SYSTEM";
+    private static final String ACTOR_USER = "USER";
     public static final String STORE_CANCEL_ORDER_ACTION = "STORE_CANCEL_ORDER";
     public static final String STORE_PROPOSE_CHANGES_ACTION = "STORE_PROPOSE_CHANGES";
     public static final String INTERNAL_ACTIVATE_SCHEDULED_ACTION = "INTERNAL_ACTIVATE_SCHEDULED";
@@ -42,14 +55,18 @@ public class OrderLifecycleService {
     public static final String INTERNAL_ADMIN_CANCEL_ACTION = "INTERNAL_ADMIN_CANCEL";
     public static final String INTERNAL_CANCEL_ACTIVE_PROPOSAL_ACTION = "INTERNAL_CANCEL_ACTIVE_PROPOSAL";
     public static final String INTERNAL_CANCEL_PROPOSAL_AND_ORDER_ACTION = "INTERNAL_CANCEL_PROPOSAL_AND_ORDER";
+    public static final String CUSTOMER_CANCEL_ORDER_ACTION = "CUSTOMER_CANCEL_ORDER";
+    public static final String CUSTOMER_RESPOND_ACCEPT_ACTION = "CUSTOMER_RESPOND_ACCEPT";
 
     private final OrderRepository orderRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
     private final OrderLifecycleRedisUpdater orderLifecycleRedisUpdater;
     private final OrderEventOutboxWriter orderEventOutboxWriter;
     private final OrderProposalRepository orderProposalRepository;
+    private final OrderItemRepository orderItemRepository;
     private final OrderProposeChangesRedisUpdater orderProposeChangesRedisUpdater;
     private final OrderCancelActiveProposalRedisUpdater orderCancelActiveProposalRedisUpdater;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public OrderLifecycleResult storeAccept(String orderId, String storeId) {
@@ -304,6 +321,145 @@ public class OrderLifecycleService {
                 null
         );
         return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.PENDING, changedAt);
+    }
+
+    @Transactional
+    public OrderLifecycleResult customerCancelWithoutRedisUpdate(String orderId, String userId) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findByIdAndCustomerId(id, userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus != OrderStatus.PENDING
+                && previousStatus != OrderStatus.CONFIRMED
+                && previousStatus != OrderStatus.SCHEDULED) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.CANCELLED);
+        }
+
+        OffsetDateTime changedAt = OffsetDateTime.now();
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setUpdatedAt(changedAt);
+        order.setCancelledAt(changedAt);
+        order.setCancelledBy(OrderCancelledBy.USER);
+        order.setCancellationReason(OrderCancellationReason.USER_REQUESTED);
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(OrderStatus.CANCELLED)
+                .changedByType(ACTOR_USER)
+                .changedById(userId)
+                .reason(OrderCancellationReason.USER_REQUESTED.name())
+                .createdAt(changedAt)
+                .build());
+
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                OrderStatus.CANCELLED,
+                changedAt,
+                ACTOR_USER,
+                userId,
+                OrderCancellationReason.USER_REQUESTED.name(),
+                null
+        );
+        return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.CANCELLED, changedAt);
+    }
+
+    public void evictCustomerCancelledRedisViews(OrderEntity order, OffsetDateTime changedAt, String idempotencyKey) {
+        evictCancelledRedisViews(order, changedAt, CUSTOMER_CANCEL_ORDER_ACTION, idempotencyKey);
+    }
+
+    @Transactional
+    public OrderLifecycleResult customerRespondCancelWithoutRedisUpdate(String orderId, String userId) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findByIdAndCustomerId(id, userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus != OrderStatus.AWAITING_CUSTOMER_RESPONSE) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.CANCELLED);
+        }
+
+        OrderProposalEntity proposal = orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OffsetDateTime changedAt = OffsetDateTime.now();
+        proposal.setGlobalDecision("CANCEL_ORDER");
+        proposal.setRespondedAt(changedAt);
+        proposal.setStatus(ProposalStatus.REJECTED);
+        orderProposalRepository.saveAndFlush(proposal);
+
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setUpdatedAt(changedAt);
+        order.setCancelledAt(changedAt);
+        order.setCancelledBy(OrderCancelledBy.USER);
+        order.setCancellationReason(OrderCancellationReason.USER_REQUESTED);
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(OrderStatus.CANCELLED)
+                .changedByType(ACTOR_USER)
+                .changedById(userId)
+                .reason(OrderCancellationReason.USER_REQUESTED.name())
+                .createdAt(changedAt)
+                .build());
+
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                OrderStatus.CANCELLED,
+                changedAt,
+                ACTOR_USER,
+                userId,
+                OrderCancellationReason.USER_REQUESTED.name(),
+                null
+        );
+        return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.CANCELLED, changedAt);
+    }
+
+    @Transactional
+    public OrderLifecycleResult customerRespondAcceptWithoutRedisUpdate(
+            String orderId,
+            String userId,
+            String globalDecision,
+            List<OrderProposalAcceptedEventData.ItemDecisionData> itemDecisions
+    ) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findByIdAndCustomerId(id, userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        if (order.getStatus() != OrderStatus.AWAITING_CUSTOMER_RESPONSE) {
+            throw new OrderInvalidTransitionException(orderId, order.getStatus(), "RESPOND_TO_PROPOSAL");
+        }
+
+        OrderProposalEntity proposal = orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        if (itemDecisions != null) {
+            validateItemDecisions(orderId, itemDecisions, proposal.getItemsJson());
+        }
+
+        OffsetDateTime respondedAt = OffsetDateTime.now();
+        proposal.setGlobalDecision(globalDecision);
+        proposal.setRespondedAt(respondedAt);
+        proposal.setStatus(ProposalStatus.ACCEPTED);
+        if (itemDecisions != null && !itemDecisions.isEmpty()) {
+            try {
+                proposal.setItemDecisionsJson(objectMapper.writeValueAsString(itemDecisions));
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("Failed to serialize item decisions for order " + orderId, e);
+            }
+        }
+        orderProposalRepository.saveAndFlush(proposal);
+
+        List<OrderItemEntity> orderItems = orderItemRepository.findByOrderIdOrderByLineNumberAsc(id);
+        orderEventOutboxWriter.saveOrderProposalAccepted(order, proposal, orderItems, globalDecision, itemDecisions, respondedAt);
+
+        return new OrderLifecycleResult(order, OrderStatus.AWAITING_CUSTOMER_RESPONSE, OrderStatus.AWAITING_CUSTOMER_RESPONSE, respondedAt);
     }
 
     @Transactional
@@ -757,6 +913,90 @@ public class OrderLifecycleService {
             return UUID.fromString(orderId);
         } catch (IllegalArgumentException exception) {
             throw new OrderNotFoundException(orderId);
+        }
+    }
+
+    private void validateItemDecisions(
+            String orderId,
+            List<OrderProposalAcceptedEventData.ItemDecisionData> itemDecisions,
+            String proposalItemsJson
+    ) {
+        List<OrderProposalsCacheDto.ProposedItem> proposedItems;
+        try {
+            proposedItems = objectMapper.readValue(
+                    proposalItemsJson,
+                    objectMapper.getTypeFactory().constructCollectionType(
+                            List.class, OrderProposalsCacheDto.ProposedItem.class));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to parse proposal items for order " + orderId, e);
+        }
+
+        // 1. No duplicate productIds in the customer's decision list
+        Set<String> seen = new HashSet<>();
+        for (OrderProposalAcceptedEventData.ItemDecisionData d : itemDecisions) {
+            if (!seen.add(d.productId())) {
+                throw new IllegalArgumentException(
+                        "Duplicate productId in itemDecisions: " + d.productId());
+            }
+        }
+
+        Map<String, OrderProposalsCacheDto.ProposedItem> proposedByProductId = proposedItems.stream()
+                .collect(Collectors.toMap(
+                        OrderProposalsCacheDto.ProposedItem::getProductId,
+                        Function.identity()));
+
+        // 2. Every decision must reference a product that is in the proposal
+        for (OrderProposalAcceptedEventData.ItemDecisionData d : itemDecisions) {
+            if (!proposedByProductId.containsKey(d.productId())) {
+                throw new IllegalArgumentException(
+                        "productId not in proposal: " + d.productId());
+            }
+        }
+
+        // 3. Every proposed item must have exactly one decision
+        Set<String> decidedIds = itemDecisions.stream()
+                .map(OrderProposalAcceptedEventData.ItemDecisionData::productId)
+                .collect(Collectors.toSet());
+        for (OrderProposalsCacheDto.ProposedItem proposed : proposedItems) {
+            if (!decidedIds.contains(proposed.getProductId())) {
+                throw new IllegalArgumentException(
+                        "Missing decision for proposed item: " + proposed.getProductId());
+            }
+        }
+
+        // 4. Per-item action constraints
+        for (OrderProposalAcceptedEventData.ItemDecisionData d : itemDecisions) {
+            OrderProposalsCacheDto.ProposedItem proposed = proposedByProductId.get(d.productId());
+            boolean fullyOutOfStock = proposed.getAvailableQuantity() == null;
+
+            switch (d.action()) {
+                case "ACCEPT_PROPOSED_QUANTITY" -> {
+                    if (fullyOutOfStock) {
+                        throw new IllegalArgumentException(
+                                "Cannot ACCEPT_PROPOSED_QUANTITY for fully out-of-stock item: "
+                                        + d.productId());
+                    }
+                }
+                case "REQUEST_CUSTOM_QUANTITY" -> {
+                    if (fullyOutOfStock) {
+                        throw new IllegalArgumentException(
+                                "Cannot REQUEST_CUSTOM_QUANTITY for fully out-of-stock item: "
+                                        + d.productId());
+                    }
+                    if (d.customQuantity() == null) {
+                        throw new IllegalArgumentException(
+                                "customQuantity is required for REQUEST_CUSTOM_QUANTITY on product: "
+                                        + d.productId());
+                    }
+                    if (d.customQuantity().compareTo(proposed.getAvailableQuantity()) > 0) {
+                        throw new IllegalArgumentException(
+                                "customQuantity " + d.customQuantity()
+                                        + " exceeds availableQuantity " + proposed.getAvailableQuantity()
+                                        + " for product: " + d.productId());
+                    }
+                }
+                // REMOVE_ITEM is always valid regardless of stock state
+            }
         }
     }
 

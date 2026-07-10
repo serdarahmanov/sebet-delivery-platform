@@ -40,7 +40,8 @@ class CancelledOrderHotViewsCacheEvictionStrategyTest {
                 RedisKeys.order(id.toString()),
                 RedisKeys.orderTracking(id.toString()),
                 RedisKeys.orderStatus(id.toString()),
-                RedisKeys.orderTimeline(id.toString())
+                RedisKeys.orderTimeline(id.toString()),
+                RedisKeys.orderProposals(id.toString())
         );
     }
 
@@ -60,7 +61,8 @@ class CancelledOrderHotViewsCacheEvictionStrategyTest {
                         RedisKeys.order(id.toString()),
                         RedisKeys.orderTracking(id.toString()),
                         RedisKeys.orderStatus(id.toString()),
-                        RedisKeys.orderTimeline(id.toString())
+                        RedisKeys.orderTimeline(id.toString()),
+                        RedisKeys.orderProposals(id.toString())
                 ),
                 id.toString()
         );

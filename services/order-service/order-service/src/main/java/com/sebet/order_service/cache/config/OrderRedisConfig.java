@@ -168,6 +168,27 @@ public class OrderRedisConfig {
     }
 
     /**
+     * Cache 8 — atomic proposal cache deletion after the customer responds to a proposal.
+     *
+     * Called after ACCEPT_ALL or ACCEPT_WITH_MODIFICATIONS. The order stays in
+     * AWAITING_CUSTOMER_RESPONSE; only the proposals key needs to be removed since
+     * the promo service will call back with the recalculated order.
+     *
+     * KEYS[1] = order:proposals:{orderId}  (C8)
+     * Returns: 1 always.
+     */
+    @Bean
+    public RedisScript<Long> respondAcceptRedisUpdateScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(
+                "redis.call('del', KEYS[1]) " +
+                "return 1"
+        );
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
      * Atomic cancellation hot-view cleanup.
      *
      * KEYS[1] = user:active_orders:{userId}

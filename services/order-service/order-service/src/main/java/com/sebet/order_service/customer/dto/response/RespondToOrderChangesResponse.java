@@ -11,13 +11,13 @@ import com.sebet.order_service.shared.enums.OrderStatus;
  *
  * Two outcomes are possible:
  *
- *   {@code CONFIRMED}  — the customer accepted the changes (all or per-item) and
- *                        the order resumes preparation. The store is notified.
+ *   {@code AWAITING_CUSTOMER_RESPONSE} — the customer accepted the changes (ACCEPT_ALL or
+ *                        ACCEPT_WITH_MODIFICATIONS). An {@code OrderProposalAccepted} event
+ *                        is published; the order stays in this status until the promo service
+ *                        recalculates discounts and calls back via the internal update endpoint.
  *
- *   {@code CANCELLED}  — the customer chose to cancel the entire order, or all
- *                        proposed items were removed leaving an empty order.
- *                        Reason will be {@code USER_REQUESTED} or
- *                        {@code OUT_OF_STOCK} respectively.
+ *   {@code CANCELLED}  — the customer chose CANCEL_ORDER.
+ *                        Reason will be {@code USER_REQUESTED}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record RespondToOrderChangesResponse(
@@ -25,8 +25,9 @@ public record RespondToOrderChangesResponse(
         String orderId,
 
         /**
-         * The order's new status after the response was processed.
-         * Either {@link OrderStatus#CONFIRMED} or {@link OrderStatus#CANCELLED}.
+         * The order's status after the response was processed.
+         * Either {@link OrderStatus#AWAITING_CUSTOMER_RESPONSE} (accept) or
+         * {@link OrderStatus#CANCELLED} (cancel).
          */
         OrderStatus status,
 

@@ -1,12 +1,16 @@
 package com.sebet.order_service.order.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.cache.service.OrderLifecycleRedisUpdater;
 import com.sebet.order_service.cache.service.OrderCancelActiveProposalRedisUpdater;
 import com.sebet.order_service.cache.service.OrderProposeChangesRedisUpdater;
 import com.sebet.order_service.order.event.OrderEventOutboxWriter;
+import com.sebet.order_service.order.event.OrderProposalAcceptedEventData;
 import com.sebet.order_service.persistence.entity.OrderEntity;
+import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderProposalEntity;
 import com.sebet.order_service.persistence.entity.OrderStatusHistoryEntity;
+import com.sebet.order_service.persistence.repository.OrderItemRepository;
 import com.sebet.order_service.persistence.repository.OrderProposalRepository;
 import com.sebet.order_service.persistence.repository.OrderRepository;
 import com.sebet.order_service.persistence.repository.OrderStatusHistoryRepository;
@@ -24,6 +28,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,6 +50,8 @@ class OrderLifecycleServiceTest {
     private final OrderProposeChangesRedisUpdater orderProposeChangesRedisUpdater = mock(OrderProposeChangesRedisUpdater.class);
     private final OrderCancelActiveProposalRedisUpdater orderCancelActiveProposalRedisUpdater =
             mock(OrderCancelActiveProposalRedisUpdater.class);
+    private final OrderItemRepository orderItemRepository = mock(OrderItemRepository.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final OrderLifecycleService service = new OrderLifecycleService(
             orderRepository,
@@ -52,8 +59,10 @@ class OrderLifecycleServiceTest {
             orderLifecycleRedisUpdater,
             orderEventOutboxWriter,
             orderProposalRepository,
+            orderItemRepository,
             orderProposeChangesRedisUpdater,
-            orderCancelActiveProposalRedisUpdater
+            orderCancelActiveProposalRedisUpdater,
+            objectMapper
     );
 
     @Test
@@ -829,6 +838,241 @@ class OrderLifecycleServiceTest {
                 .isInstanceOf(OrderNotFoundException.class);
 
         verify(orderProposeChangesRedisUpdater, never()).apply(any(), any(), any());
+    }
+
+    // ── customerRespondCancelWithoutRedisUpdate ───────────────────────────────
+
+    @Test
+    void customerRespondCancel_cancelsOrderAndMarksProposalRejected() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(UUID.randomUUID())
+                .orderId(id)
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\"}]")
+                .build();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1")).thenReturn(Optional.of(order));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE))
+                .thenReturn(Optional.of(proposal));
+        when(orderProposalRepository.saveAndFlush(proposal)).thenReturn(proposal);
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+
+        OrderLifecycleResult result = service.customerRespondCancelWithoutRedisUpdate(
+                id.toString(), "customer-1");
+
+        assertThat(result.previousStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getCancelledBy()).isEqualTo(OrderCancelledBy.USER);
+        assertThat(order.getCancellationReason()).isEqualTo(OrderCancellationReason.USER_REQUESTED);
+        assertThat(order.getCancelledAt()).isNotNull();
+        assertThat(proposal.getStatus()).isEqualTo(ProposalStatus.REJECTED);
+        assertThat(proposal.getGlobalDecision()).isEqualTo("CANCEL_ORDER");
+        assertThat(proposal.getRespondedAt()).isNotNull();
+
+        ArgumentCaptor<OrderStatusHistoryEntity> historyCaptor =
+                ArgumentCaptor.forClass(OrderStatusHistoryEntity.class);
+        verify(orderStatusHistoryRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getFromStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(historyCaptor.getValue().getToStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(historyCaptor.getValue().getChangedByType()).isEqualTo("USER");
+        assertThat(historyCaptor.getValue().getChangedById()).isEqualTo("customer-1");
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo("USER_REQUESTED");
+
+        verify(orderEventOutboxWriter).saveOrderStatusTransition(
+                order,
+                OrderStatus.AWAITING_CUSTOMER_RESPONSE,
+                OrderStatus.CANCELLED,
+                result.changedAt(),
+                "USER",
+                "customer-1",
+                "USER_REQUESTED",
+                null
+        );
+    }
+
+    @Test
+    void customerRespondCancel_throwsInvalidTransitionWhenNotAwaitingCustomerResponse() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1"))
+                .thenReturn(Optional.of(order(id, OrderStatus.CONFIRMED)));
+
+        assertThatThrownBy(() -> service.customerRespondCancelWithoutRedisUpdate(
+                id.toString(), "customer-1"))
+                .isInstanceOf(OrderInvalidTransitionException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderProposalRepository, never()).findByOrderIdAndStatus(any(), any());
+        verify(orderStatusHistoryRepository, never()).save(any());
+        verify(orderEventOutboxWriter, never()).saveOrderStatusTransition(
+                any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void customerRespondCancel_throwsNotFoundWhenOrderDoesNotBelongToCustomer() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.customerRespondCancelWithoutRedisUpdate(
+                id.toString(), "customer-1"))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void customerRespondCancel_throwsNotFoundWhenNoActiveProposalExists() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1"))
+                .thenReturn(Optional.of(order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE)));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.customerRespondCancelWithoutRedisUpdate(
+                id.toString(), "customer-1"))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderStatusHistoryRepository, never()).save(any());
+    }
+
+    // ── customerRespondAcceptWithoutRedisUpdate ───────────────────────────────
+
+    @Test
+    void customerRespondAccept_acceptAllSetsProposalAcceptedAndWritesOutbox() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(UUID.randomUUID())
+                .orderId(id)
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\",\"availableQuantity\":1}]")
+                .build();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1")).thenReturn(Optional.of(order));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE))
+                .thenReturn(Optional.of(proposal));
+        when(orderProposalRepository.saveAndFlush(proposal)).thenReturn(proposal);
+        when(orderItemRepository.findByOrderIdOrderByLineNumberAsc(id)).thenReturn(List.of());
+
+        OrderLifecycleResult result = service.customerRespondAcceptWithoutRedisUpdate(
+                id.toString(), "customer-1", "ACCEPT_ALL", null);
+
+        assertThat(result.previousStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(proposal.getStatus()).isEqualTo(ProposalStatus.ACCEPTED);
+        assertThat(proposal.getGlobalDecision()).isEqualTo("ACCEPT_ALL");
+        assertThat(proposal.getRespondedAt()).isNotNull();
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderStatusHistoryRepository, never()).save(any());
+        verify(orderEventOutboxWriter).saveOrderProposalAccepted(
+                order, proposal, List.of(), "ACCEPT_ALL", null, result.changedAt());
+    }
+
+    @Test
+    void customerRespondAccept_throwsInvalidTransitionWhenNotAwaitingCustomerResponse() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1"))
+                .thenReturn(Optional.of(order(id, OrderStatus.CONFIRMED)));
+
+        assertThatThrownBy(() -> service.customerRespondAcceptWithoutRedisUpdate(
+                id.toString(), "customer-1", "ACCEPT_ALL", null))
+                .isInstanceOf(OrderInvalidTransitionException.class);
+
+        verify(orderProposalRepository, never()).findByOrderIdAndStatus(any(), any());
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderEventOutboxWriter, never()).saveOrderProposalAccepted(
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void customerRespondAccept_throwsNotFoundWhenOrderDoesNotBelongToCustomer() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.customerRespondAcceptWithoutRedisUpdate(
+                id.toString(), "customer-1", "ACCEPT_ALL", null))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void customerRespondAccept_throwsNotFoundWhenNoActiveProposalExists() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1"))
+                .thenReturn(Optional.of(order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE)));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.customerRespondAcceptWithoutRedisUpdate(
+                id.toString(), "customer-1", "ACCEPT_ALL", null))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void customerRespondAccept_throwsWhenItemDecisionReferencesProductNotInProposal() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(UUID.randomUUID())
+                .orderId(id)
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\",\"availableQuantity\":1}]")
+                .build();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1")).thenReturn(Optional.of(order));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE))
+                .thenReturn(Optional.of(proposal));
+
+        List<OrderProposalAcceptedEventData.ItemDecisionData> decisions = List.of(
+                new OrderProposalAcceptedEventData.ItemDecisionData("unknown-product", "REMOVE_ITEM", null)
+        );
+
+        assertThatThrownBy(() -> service.customerRespondAcceptWithoutRedisUpdate(
+                id.toString(), "customer-1", "ACCEPT_WITH_MODIFICATIONS", decisions))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unknown-product");
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderEventOutboxWriter, never()).saveOrderProposalAccepted(
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void customerRespondAccept_throwsWhenAcceptingOutOfStockItem() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(UUID.randomUUID())
+                .orderId(id)
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\",\"availableQuantity\":null}]")
+                .build();
+        when(orderRepository.findByIdAndCustomerId(id, "customer-1")).thenReturn(Optional.of(order));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE))
+                .thenReturn(Optional.of(proposal));
+
+        List<OrderProposalAcceptedEventData.ItemDecisionData> decisions = List.of(
+                new OrderProposalAcceptedEventData.ItemDecisionData("p1", "ACCEPT_PROPOSED_QUANTITY", null)
+        );
+
+        assertThatThrownBy(() -> service.customerRespondAcceptWithoutRedisUpdate(
+                id.toString(), "customer-1", "ACCEPT_WITH_MODIFICATIONS", decisions))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ACCEPT_PROPOSED_QUANTITY")
+                .hasMessageContaining("p1");
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderEventOutboxWriter, never()).saveOrderProposalAccepted(
+                any(), any(), any(), any(), any(), any());
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

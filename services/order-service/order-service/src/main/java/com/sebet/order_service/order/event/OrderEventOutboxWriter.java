@@ -3,6 +3,8 @@ package com.sebet.order_service.order.event;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.persistence.entity.OrderEntity;
+import com.sebet.order_service.persistence.entity.OrderItemEntity;
+import com.sebet.order_service.persistence.entity.OrderProposalEntity;
 import com.sebet.order_service.persistence.entity.OutboxEventEntity;
 import com.sebet.order_service.persistence.repository.OutboxEventRepository;
 import com.sebet.order_service.shared.enums.OrderStatus;
@@ -37,6 +39,7 @@ public class OrderEventOutboxWriter {
     private static final String DRIVER_ASSIGNMENT_DECLINED = "DriverAssignmentDeclined";
     private static final String ORDER_CACHE_EVICTION_REQUESTED = "OrderCacheEvictionRequested";
     private static final String ORDER_PROPOSED_TO_CUSTOMER = "OrderProposedToCustomer";
+    private static final String ORDER_PROPOSAL_ACCEPTED = "OrderProposalAccepted";
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
@@ -90,6 +93,54 @@ public class OrderEventOutboxWriter {
                 iso(order.getCancelledAt())
         );
         saveEvent(order, statusTransitionEventType(previousStatus, newStatus), changedAt, data);
+    }
+
+    public void saveOrderProposalAccepted(
+            OrderEntity order,
+            OrderProposalEntity proposal,
+            List<OrderItemEntity> originalItems,
+            String globalDecision,
+            List<OrderProposalAcceptedEventData.ItemDecisionData> itemDecisions,
+            OffsetDateTime respondedAt
+    ) {
+        List<OrderProposalAcceptedEventData.OriginalItemData> originalItemData = originalItems.stream()
+                .map(item -> new OrderProposalAcceptedEventData.OriginalItemData(
+                        item.getProductId(),
+                        item.getProductName(),
+                        item.getQuantity(),
+                        item.getUnit().name(),
+                        item.getUnitPriceAmount(),
+                        item.getGrossAmount(),
+                        item.getDiscountAmount()
+                ))
+                .toList();
+
+        OrderProposalAcceptedEventData.OriginalPricingData pricingData =
+                new OrderProposalAcceptedEventData.OriginalPricingData(
+                        order.getSubtotalAmount(),
+                        order.getItemDiscountAmount(),
+                        order.getOrderDiscountAmount(),
+                        order.getDeliveryFeeAmount(),
+                        order.getServiceFeeAmount(),
+                        order.getSmallOrderFeeAmount(),
+                        order.getTotalAmount(),
+                        order.getCurrency()
+                );
+
+        OrderProposalAcceptedEventData data = new OrderProposalAcceptedEventData(
+                order.getId().toString(),
+                order.getCustomerId(),
+                order.getStoreId(),
+                proposal.getId().toString(),
+                globalDecision,
+                itemDecisions,
+                proposal.getItemsJson(),
+                originalItemData,
+                pricingData,
+                order.getSelectedPromoCodes(),
+                iso(respondedAt)
+        );
+        saveEvent(order, ORDER_PROPOSAL_ACCEPTED, respondedAt, data);
     }
 
     public void saveOrderProposedToCustomer(OrderEntity order, String itemsJson, OffsetDateTime proposedAt) {

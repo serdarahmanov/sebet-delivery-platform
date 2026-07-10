@@ -7,9 +7,15 @@ public enum ProposalStatus {
 
     /**
      * Customer accepted the proposal (ACCEPT_ALL or ACCEPT_WITH_MODIFICATIONS).
-     * Order returned to CONFIRMED.
+     * Waiting for promo service to recalculate discounts and call back.
      */
     ACCEPTED,
+
+    /**
+     * Promo service called back with recalculated totals.
+     * Order quantities and amounts updated; order transitioned to CONFIRMED.
+     */
+    APPLIED,
 
     /**
      * Customer chose CANCEL_ORDER in response to the proposal.

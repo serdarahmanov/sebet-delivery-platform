@@ -3,6 +3,7 @@ package com.sebet.order_service.customer.controller;
 import com.sebet.order_service.customer.dto.request.RespondToOrderChangesRequest;
 import com.sebet.order_service.customer.dto.request.UpdateScheduledOrderRequest;
 import com.sebet.order_service.customer.dto.response.*;
+import com.sebet.order_service.customer.service.CustomerOrderLifecycleService;
 import com.sebet.order_service.customer.service.CustomerOrderQueryService;
 import com.sebet.order_service.customer.service.CustomerOrderRouterResult;
 import jakarta.validation.Valid;
@@ -52,6 +53,7 @@ import java.util.List;
 public class CustomerOrderController {
 
     private final CustomerOrderQueryService queryService;
+    private final CustomerOrderLifecycleService lifecycleService;
 
     // ── History ──────────────────────────────────────────────────────────────
 
@@ -243,12 +245,16 @@ public class CustomerOrderController {
      * Submits the customer's response to the store's change proposal.
      *
      * Possible outcomes:
-     *   CONFIRMED  — customer accepted all or some items; order resumes preparation.
-     *   CANCELLED  — customer cancelled, or all items were removed.
+     *   AWAITING_CUSTOMER_RESPONSE — customer accepted (ACCEPT_ALL or ACCEPT_WITH_MODIFICATIONS);
+     *                                OrderProposalAccepted event published; order stays in this
+     *                                status until the promo service recalculates and calls back via
+     *                                POST /internal/orders/{orderId}/update-after-proposal.
+     *   CANCELLED                  — customer chose CANCEL_ORDER; order cancelled immediately.
      *
      * Clears Cache 8 (proposals) on completion regardless of outcome.
      *
-     * Returns 404 when no active proposal exists.
+     * Returns 400 when globalDecision is ACCEPT_WITH_MODIFICATIONS and itemDecisions is empty.
+     * Returns 404 when no active proposal exists or the order does not belong to the caller.
      * Returns 409 when the order is not in AWAITING_CUSTOMER_RESPONSE status.
      */
     @PostMapping("/{orderId}/respond-to-changes")
@@ -257,7 +263,7 @@ public class CustomerOrderController {
             @PathVariable String orderId,
             @RequestBody @Valid RespondToOrderChangesRequest request
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(lifecycleService.respondToChanges(userId, orderId, request));
     }
 
     // ── Cancel ───────────────────────────────────────────────────────────────
@@ -278,6 +284,6 @@ public class CustomerOrderController {
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(lifecycleService.cancelOrder(userId, orderId));
     }
 }

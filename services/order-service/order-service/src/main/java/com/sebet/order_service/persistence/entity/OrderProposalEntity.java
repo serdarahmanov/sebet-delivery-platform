@@ -19,6 +19,14 @@ import org.hibernate.type.SqlTypes;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+/**
+ * Tracks the full lifecycle of a store-initiated change proposal.
+ *
+ * Store side  : items_json, store_id, proposed_at, status=ACTIVE
+ * Customer side: global_decision, item_decisions_json, responded_at, status=ACCEPTED|REJECTED
+ * Promo side  : applied_at, status=APPLIED (after promo service calls back with recalculated totals)
+ */
+
 @Entity
 @Table(name = "order_proposals")
 @Getter
@@ -48,6 +56,21 @@ public class OrderProposalEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private ProposalStatus status;
+
+    /** ACCEPT_ALL, ACCEPT_WITH_MODIFICATIONS, or CANCEL_ORDER — set when customer responds. */
+    @Column(length = 40)
+    private String globalDecision;
+
+    /** Per-item choices — populated only for ACCEPT_WITH_MODIFICATIONS. */
+    @Column(columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String itemDecisionsJson;
+
+    /** When the customer submitted their response. */
+    private OffsetDateTime respondedAt;
+
+    /** When the promo service called back and the order was fully updated. */
+    private OffsetDateTime appliedAt;
 
     @Column(nullable = false, updatable = false)
     private OffsetDateTime createdAt;
