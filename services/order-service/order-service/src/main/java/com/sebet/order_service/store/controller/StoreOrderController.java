@@ -294,4 +294,21 @@ public class StoreOrderController {
     ) {
         return ResponseEntity.ok(storeOrderLifecycleService.proposeChanges(storeId, orderId, request, idempotencyKey));
     }
+
+    /**
+     * Store cancels its active proposal without cancelling the order.
+     *
+     * Intended for cases where the store needs to withdraw the current proposal
+     * and submit a corrected one. Pending implementation.
+     *
+     * Requires Idempotency-Key.
+     */
+    @PostMapping("/{orderId}/cancel-active-proposal")
+    public ResponseEntity<StoreCancelActiveProposalResponse> cancelActiveProposal(
+            @RequestHeader("X-Store-Id") String storeId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @PathVariable String orderId
+    ) {
+        throw new UnsupportedOperationException("Not implemented yet");
+    }
 }

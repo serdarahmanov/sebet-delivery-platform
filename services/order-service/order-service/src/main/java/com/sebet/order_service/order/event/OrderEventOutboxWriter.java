@@ -30,6 +30,7 @@ public class OrderEventOutboxWriter {
     private static final String ORDER_PICKED_UP = "OrderPickedUp";
     private static final String ORDER_ARRIVED = "OrderArrived";
     private static final String ORDER_DELIVERED = "OrderDelivered";
+    private static final String ORDER_ACTIVE_PROPOSAL_CANCELLED = "OrderActiveProposalCancelled";
     private static final String DRIVER_ASSIGNED = "DriverAssigned";
     private static final String DRIVER_REPLACED = "DriverReplaced";
     private static final String DRIVER_UNASSIGNED = "DriverUnassigned";
@@ -238,6 +239,9 @@ public class OrderEventOutboxWriter {
         }
         if (previousStatus == OrderStatus.PENDING && newStatus == OrderStatus.CONFIRMED) {
             return ORDER_ACCEPTED;
+        }
+        if (previousStatus == OrderStatus.AWAITING_CUSTOMER_RESPONSE && newStatus == OrderStatus.CONFIRMED) {
+            return ORDER_ACTIVE_PROPOSAL_CANCELLED;
         }
         if (previousStatus == OrderStatus.CONFIRMED && newStatus == OrderStatus.READY_FOR_PICKUP) {
             return ORDER_READY_FOR_PICKUP;

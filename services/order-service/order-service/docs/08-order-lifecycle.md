@@ -103,6 +103,10 @@ SCHEDULED
 ```
 
 Scheduled orders are planned to enter the active queue 30 minutes before their requested delivery time.
+The automatic transition job is still pending and should validate that an order is due before activation.
+
+The implemented internal `POST /api/v1/internal/orders/{orderId}/activate-scheduled`
+endpoint is a manual admin/support override for `SCHEDULED -> PENDING`, not the automatic scheduler workflow.
 
 ## Proposal Flow
 
@@ -119,7 +123,12 @@ AWAITING_CUSTOMER_RESPONSE
   -> CANCELLED
 ```
 
-The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response transitions remain pending.
+Proposal cancellation has two distinct pending endpoint families:
+
+- internal `cancel-active-proposal` removes the active proposal without cancelling the order, moves the order back to `CONFIRMED`, deletes C8, updates C4, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 so a corrected proposal can be submitted later.
+- `cancel-proposal-and-order` removes the active proposal and cancels the order.
+
+The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response and proposal cancellation transitions remain pending.
 
 ## Cancellation Paths
 

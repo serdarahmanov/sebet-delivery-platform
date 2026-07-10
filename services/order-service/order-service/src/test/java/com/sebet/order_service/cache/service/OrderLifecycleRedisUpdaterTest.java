@@ -1,6 +1,7 @@
 package com.sebet.order_service.cache.service;
 
 import com.sebet.order_service.cache.dto.OrderTimelineEntry;
+import com.sebet.order_service.cache.eviction.ScheduledActivationHotViewsCacheEvictionStrategy;
 import com.sebet.order_service.cache.repository.ActiveOrdersRedisRepository;
 import com.sebet.order_service.cache.repository.OrderRedisRepository;
 import com.sebet.order_service.cache.repository.OrderStatusRedisRepository;
@@ -12,13 +13,18 @@ import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ScheduleType;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.RedisConnectionFailureException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -34,6 +40,8 @@ class OrderLifecycleRedisUpdaterTest {
     private final StoreActiveOrdersRedisRepository storeActiveOrdersRedisRepository = mock(StoreActiveOrdersRedisRepository.class);
     private final VerificationCodeRedisRepository verificationCodeRedisRepository = mock(VerificationCodeRedisRepository.class);
     private final OrderCacheEvictionService orderCacheEvictionService = mock(OrderCacheEvictionService.class);
+    private final ScheduledActivationHotViewsCacheEvictionStrategy scheduledActivationHotViewsStrategy =
+            mock(ScheduledActivationHotViewsCacheEvictionStrategy.class);
 
     private final OrderLifecycleRedisUpdater updater = new OrderLifecycleRedisUpdater(
             orderStatusRedisRepository,
@@ -43,7 +51,8 @@ class OrderLifecycleRedisUpdaterTest {
             activeOrdersRedisRepository,
             storeActiveOrdersRedisRepository,
             verificationCodeRedisRepository,
-            orderCacheEvictionService
+            orderCacheEvictionService,
+            scheduledActivationHotViewsStrategy
     );
 
     @Test
@@ -138,6 +147,75 @@ class OrderLifecycleRedisUpdaterTest {
                 orderId,
                 new OrderTimelineEntry("DELIVERED", "2026-07-07T10:15:00Z")
         );
+    }
+
+    @Test
+    void scheduledActivationUsesAtomicHotViewStrategy() {
+        OrderEntity order = order();
+        order.setScheduleType(ScheduleType.SCHEDULED);
+        String orderId = order.getId().toString();
+
+        updater.applyTransition(
+                order,
+                OrderStatus.PENDING,
+                "2026-07-07T10:00:00Z",
+                "INTERNAL_ACTIVATE_SCHEDULED"
+        );
+
+        verify(scheduledActivationHotViewsStrategy).apply(order);
+        verify(orderCacheEvictionService, never()).requestEvictionAfterUpdateFailure(
+                any(), any(), any(), any(), any(), any());
+        verify(orderTimelineRedisRepository, never()).append(any(), any());
+    }
+
+    @Test
+    void scheduledActivationRequestsAsyncRepairWhenRedisFails() {
+        OrderEntity order = order();
+        order.setScheduleType(ScheduleType.SCHEDULED);
+        String orderId = order.getId().toString();
+        RedisConnectionFailureException failure = new RedisConnectionFailureException("redis down");
+        doThrow(failure).when(scheduledActivationHotViewsStrategy).apply(order);
+
+        updater.applyTransition(
+                order,
+                OrderStatus.PENDING,
+                "2026-07-07T10:00:00Z",
+                "INTERNAL_ACTIVATE_SCHEDULED"
+        );
+
+        verify(orderCacheEvictionService).requestEvictionAfterUpdateFailure(
+                eq(orderId),
+                eq(scheduledActivationHotViewsStrategy),
+                eq("SCHEDULED_ACTIVATION"),
+                eq("INTERNAL_ACTIVATE_SCHEDULED"),
+                isNull(),
+                eq(failure)
+        );
+    }
+
+    @Test
+    void scheduledActivationPropagatesNonRedisFailure() {
+        OrderEntity order = order();
+        order.setScheduleType(ScheduleType.SCHEDULED);
+        String orderId = order.getId().toString();
+        IllegalStateException failure = new IllegalStateException("database unavailable");
+        doThrow(failure).when(scheduledActivationHotViewsStrategy).apply(order);
+        doThrow(failure).when(orderCacheEvictionService).requestEvictionAfterUpdateFailure(
+                eq(orderId),
+                eq(scheduledActivationHotViewsStrategy),
+                eq("SCHEDULED_ACTIVATION"),
+                eq("INTERNAL_ACTIVATE_SCHEDULED"),
+                isNull(),
+                eq(failure)
+        );
+
+        assertThatThrownBy(() -> updater.applyTransition(
+                order,
+                OrderStatus.PENDING,
+                "2026-07-07T10:00:00Z",
+                "INTERNAL_ACTIVATE_SCHEDULED"
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("database unavailable");
     }
 
     private OrderEntity order() {

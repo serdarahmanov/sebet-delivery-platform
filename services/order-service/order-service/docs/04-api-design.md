@@ -44,7 +44,7 @@ Required header:
 X-Store-Id: <store-id>
 ```
 
-Additional required header for `POST /api/v1/store/orders/{orderId}/cancel` and `POST /api/v1/store/orders/{orderId}/propose-changes`:
+Additional required header for `POST /api/v1/store/orders/{orderId}/cancel`, `POST /api/v1/store/orders/{orderId}/propose-changes`, and `POST /api/v1/store/orders/{orderId}/cancel-active-proposal`:
 
 ```http
 Idempotency-Key: <unique-command-key>
@@ -62,6 +62,7 @@ Endpoint groups:
 - `POST /api/v1/store/orders/{orderId}/ready`
 - `POST /api/v1/store/orders/{orderId}/cancel`
 - `POST /api/v1/store/orders/{orderId}/propose-changes`
+- `POST /api/v1/store/orders/{orderId}/cancel-active-proposal`
 
 ## Driver API
 
@@ -110,22 +111,24 @@ Required header:
 X-Internal-Key: <shared-secret>
 ```
 
-Driver assignment writes also require:
+Driver assignment and internal lifecycle writes also require:
 
 ```http
 Idempotency-Key: <unique-command-key>
 ```
 
 Not exposed to customers, stores, or drivers. Intended for the dispatch service,
-internal background job triggers, and other platform services.
+admin/ops tooling, and other internal platform services.
 
 Endpoint groups:
 
 - `POST /api/v1/internal/orders/{orderId}/assign-driver` - sets `driverId` and `driverAssignedAt`
 - `POST /api/v1/internal/orders/{orderId}/unassign-driver` - clears `driverId` with no replacement; valid on any non-terminal status
+- `POST /api/v1/internal/orders/{orderId}/admin-cancel` - admin override cancellation
 - `POST /api/v1/internal/orders/{orderId}/system-cancel` - system-initiated cancellation
 - `POST /api/v1/internal/orders/{orderId}/activate-scheduled` - `SCHEDULED -> PENDING`
-- `POST /api/v1/internal/orders/{orderId}/cancel-proposal` - `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`
+- `POST /api/v1/internal/orders/{orderId}/cancel-active-proposal` - cancel active proposal only
+- `POST /api/v1/internal/orders/{orderId}/cancel-proposal-and-order` - `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`
 
 ## Current Implementation Status
 
@@ -182,6 +185,7 @@ The following store write endpoints are implemented through `StoreOrderLifecycle
 | `POST /api/v1/store/orders/{orderId}/ready` | `CONFIRMED -> READY_FOR_PICKUP` | implemented |
 | `POST /api/v1/store/orders/{orderId}/cancel` | `CONFIRMED` or `AWAITING_CUSTOMER_RESPONSE` -> `CANCELLED` | implemented |
 | `POST /api/v1/store/orders/{orderId}/propose-changes` | `CONFIRMED` -> `AWAITING_CUSTOMER_RESPONSE` | implemented |
+| `POST /api/v1/store/orders/{orderId}/cancel-active-proposal` | cancel active proposal only, allowing a corrected proposal later | pending |
 
 Invalid lifecycle transitions return `409 Conflict` with `ORDER_INVALID_TRANSITION`.
 Orders that do not exist or do not belong to the calling store return `404 ORDER_NOT_FOUND`.
@@ -212,20 +216,29 @@ Driver ownership is verified on every driver endpoint: the `driverId` on the ord
 
 ### Internal API
 
-The following internal driver-assignment endpoints are implemented through `InternalDriverAssignmentService`:
+The following internal endpoints are implemented through `InternalDriverAssignmentService` and `OrderLifecycleService`:
 
 | Endpoint | Behavior | Status |
 |---|---|---|
 | `POST /api/v1/internal/orders/{orderId}/assign-driver` | assigns a new driver, idempotently returns the existing assignment for the same driver, or replaces a different driver | implemented |
 | `POST /api/v1/internal/orders/{orderId}/unassign-driver` | clears the current driver on any non-terminal order | implemented |
+| `POST /api/v1/internal/orders/{orderId}/admin-cancel` | admin override cancellation for any order that is not `DELIVERED` or `CANCELLED` | implemented |
+| `POST /api/v1/internal/orders/{orderId}/system-cancel` | automated system cancellation for pre-delivery orders | implemented |
+| `POST /api/v1/internal/orders/{orderId}/activate-scheduled` | `SCHEDULED -> PENDING` | implemented |
+| `POST /api/v1/internal/orders/{orderId}/cancel-active-proposal` | cancel active proposal only, returning order to `CONFIRMED` | implemented |
+| `POST /api/v1/internal/orders/{orderId}/cancel-proposal-and-order` | `AWAITING_CUSTOMER_RESPONSE -> CANCELLED` with reason `AWAITING_CUSTOMER_RESPONSE_TIMEOUT` | implemented |
 
 Assignment writes are idempotent by `Idempotency-Key`. The order update, assignment outbox event, and idempotency record commit in the same database transaction. After commit, order-service tries to evict C2 (`order:{orderId}`) so the next Redis-first read rebuilds from PostgreSQL. If Redis is unavailable or the Redis command result is unknown, order-service writes a deliberate `OrderCacheEvictionRequested` outbox event and still returns `200`. Non-Redis runtime failures propagate normally. If that fallback event cannot be recorded, the endpoint returns `503 CACHE_INVALIDATION_FAILED`; callers should retry the same request with the same idempotency key. Reusing the same key for a different request body returns `409 IDEMPOTENCY_KEY_CONFLICT`.
 
-The following internal endpoints still throw `UnsupportedOperationException`:
+Scheduled activation is an admin/support manual activation endpoint, not the automatic scheduled-order job. It is idempotent by `Idempotency-Key`. The status transition, `OrderActivated` outbox event, and idempotent command response commit in the same PostgreSQL transaction. After commit and on idempotent replay, it atomically removes the order from Cache 1c, adds it to Cache 1 and Cache 1b, and writes Cache 4 through a Lua script. Recoverable Redis failures record an `OrderCacheEvictionRequested` event for `SCHEDULED_ACTIVATION_HOT_VIEWS`; non-Redis runtime failures still propagate. The future scheduled-order job should use a separate workflow that validates due-time semantics before activation.
 
-- `POST /api/v1/internal/orders/{orderId}/system-cancel`
-- `POST /api/v1/internal/orders/{orderId}/activate-scheduled`
-- `POST /api/v1/internal/orders/{orderId}/cancel-proposal`
+Admin cancel is idempotent by `Idempotency-Key` and is reserved for admin/support tooling. It accepts the same reason set as system cancel, but it can cancel only orders that are not already `DELIVERED` or `CANCELLED`. Delivered orders should be handled by refund or settlement adjustment workflows instead of rewriting the lifecycle status.
+
+System cancel is idempotent by `Idempotency-Key`. The endpoint is for automated internal flows and accepts only system-owned reasons: `PAYMENT_FAILED`, `NO_RIDERS_AVAILABLE`, `STORE_RESPONSE_TIMEOUT`, `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`, and `SYSTEM_ERROR`. It can cancel `PENDING`, `CONFIRMED`, `AWAITING_CUSTOMER_RESPONSE`, `SCHEDULED`, or `READY_FOR_PICKUP` orders, and rejects `OUT_FOR_DELIVERY`, `ARRIVED`, `DELIVERED`, and already `CANCELLED` orders. Both cancellation paths write the cancellation status, status history, lifecycle outbox event, and idempotent command response in one PostgreSQL transaction. After commit and on idempotent replay, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS`, which removes C1/C1b membership and deletes C2/C3/C4/C6 through the recoverable eviction fallback pattern.
+
+Internal `cancel-active-proposal` is idempotent by `Idempotency-Key`. It requires the order to be `AWAITING_CUSTOMER_RESPONSE` and requires a durable active proposal row. The database transaction marks the proposal row as `CANCELLED` (retained as an audit record), moves the order back to `CONFIRMED`, writes status history, emits `OrderActiveProposalCancelled`, and stores the idempotent command response. After commit and on idempotent replay, a Redis Lua script deletes C8, writes C4 as `CONFIRMED`, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 without removing the rest of the timeline. Recoverable Redis failures write an `OrderCacheEvictionRequested` event for `CANCEL_ACTIVE_PROPOSAL_HOT_VIEWS`.
+
+Internal `cancel-proposal-and-order` is idempotent by `Idempotency-Key`. It requires the order to be `AWAITING_CUSTOMER_RESPONSE`. The database transaction marks the proposal row as `TIMED_OUT` (retained as an audit record), transitions the order to `CANCELLED` with reason `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`, writes status history, emits `OrderCancelled`, and stores the idempotent command response. After commit and on idempotent replay, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS`, which removes C1/C1b membership and deletes C2/C3/C4/C6/C8 through the recoverable eviction fallback pattern.
 
 ## Response Design
 

@@ -1,7 +1,10 @@
 package com.sebet.order_service.persistence.entity;
 
+import com.sebet.order_service.shared.enums.ProposalStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -42,6 +45,10 @@ public class OrderProposalEntity {
     @JdbcTypeCode(SqlTypes.JSON)
     private String itemsJson;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private ProposalStatus status;
+
     @Column(nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -49,5 +56,6 @@ public class OrderProposalEntity {
     void prePersist() {
         if (id == null) id = UUID.randomUUID();
         if (createdAt == null) createdAt = OffsetDateTime.now();
+        if (status == null) status = ProposalStatus.ACTIVE;
     }
 }

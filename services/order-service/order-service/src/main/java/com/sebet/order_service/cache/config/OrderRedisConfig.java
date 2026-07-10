@@ -95,6 +95,79 @@ public class OrderRedisConfig {
     }
 
     /**
+     * Cache 8 + Cache 4 + Cache 6 -- atomic active-proposal cancellation.
+     *
+     * Deletes the active proposal, updates the current status back to CONFIRMED,
+     * and removes active proposal-wait timeline entries from C6.
+     *
+     * KEYS[1] = order:proposals:{orderId}   (C8)
+     * KEYS[2] = order:status:{orderId}      (C4)
+     * KEYS[3] = order:timeline:{orderId}    (C6)
+     * ARGV[1] = status value (C4 value: "CONFIRMED|userId|storeId")
+     * ARGV[2] = C4 TTL seconds
+     * ARGV[3] = C6 TTL seconds
+     * ARGV[4] = timeline status to remove ("AWAITING_CUSTOMER_RESPONSE")
+     * Returns: 1 always.
+     */
+    @Bean
+    public RedisScript<Long> cancelActiveProposalRedisUpdateScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(
+                "redis.call('del', KEYS[1]) " +
+                "redis.call('set', KEYS[2], ARGV[1], 'ex', tonumber(ARGV[2])) " +
+                "local entries = redis.call('lrange', KEYS[3], 0, -1) " +
+                "redis.call('del', KEYS[3]) " +
+                "for _, entry in ipairs(entries) do " +
+                "  local keep = true " +
+                "  local ok, decoded = pcall(cjson.decode, entry) " +
+                "  if ok and decoded['status'] == ARGV[4] then " +
+                "    keep = false " +
+                "  end " +
+                "  if keep then " +
+                "    redis.call('rpush', KEYS[3], entry) " +
+                "  end " +
+                "end " +
+                "if redis.call('llen', KEYS[3]) > 0 then " +
+                "  redis.call('expire', KEYS[3], tonumber(ARGV[3])) " +
+                "end " +
+                "return 1"
+        );
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * Cache 1c + Cache 1 + Cache 1b + Cache 4 -- atomic scheduled activation.
+     *
+     * Moves a scheduled order into the active order sets and updates the status
+     * hot-view in one Redis operation.
+     *
+     * KEYS[1] = store:scheduled_orders:{storeId} (C1c)
+     * KEYS[2] = user:active_orders:{userId}      (C1)
+     * KEYS[3] = store:active_orders:{storeId}    (C1b)
+     * KEYS[4] = order:status:{orderId}           (C4)
+     * ARGV[1] = orderId
+     * ARGV[2] = status value (C4 value: "PENDING|userId|storeId")
+     * ARGV[3] = C1b TTL seconds
+     * ARGV[4] = C4 TTL seconds
+     * Returns: 1 always.
+     */
+    @Bean
+    public RedisScript<Long> activateScheduledOrderRedisUpdateScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(
+                "redis.call('zrem', KEYS[1], ARGV[1]) " +
+                "redis.call('sadd', KEYS[2], ARGV[1]) " +
+                "redis.call('sadd', KEYS[3], ARGV[1]) " +
+                "redis.call('expire', KEYS[3], tonumber(ARGV[3])) " +
+                "redis.call('set', KEYS[4], ARGV[2], 'ex', tonumber(ARGV[4])) " +
+                "return 1"
+        );
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
      * Atomic cancellation hot-view cleanup.
      *
      * KEYS[1] = user:active_orders:{userId}
@@ -103,6 +176,7 @@ public class OrderRedisConfig {
      * KEYS[4] = order:tracking:{orderId}
      * KEYS[5] = order:status:{orderId}
      * KEYS[6] = order:timeline:{orderId}
+     * KEYS[7] = order:proposals:{orderId}
      * ARGV[1] = orderId
      * Returns: 1 always.
      */
@@ -118,7 +192,7 @@ public class OrderRedisConfig {
                 "if redis.call('scard', KEYS[2]) == 0 then " +
                 "  redis.call('del', KEYS[2]) " +
                 "end " +
-                "redis.call('del', KEYS[3], KEYS[4], KEYS[5], KEYS[6]) " +
+                "redis.call('del', KEYS[3], KEYS[4], KEYS[5], KEYS[6], KEYS[7]) " +
                 "return 1"
         );
         script.setResultType(Long.class);

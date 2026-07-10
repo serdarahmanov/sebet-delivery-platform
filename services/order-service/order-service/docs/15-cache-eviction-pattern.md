@@ -171,6 +171,12 @@ single multi-DEL without a Lua script, which is sufficient for eviction because
 all three keys are already stale when the consumer processes the event. The
 `cacheKey` primary key is C8 (`order:proposals:{orderId}`).
 
+`CANCEL_ACTIVE_PROPOSAL_HOT_VIEWS` also groups C8, C4, and C6 for the proposal
+withdrawal path. The direct write path uses `cancelActiveProposalRedisUpdateScript`
+to delete C8, set C4 back to `CONFIRMED`, and remove `AWAITING_CUSTOMER_RESPONSE`
+entries from C6 atomically. If that update fails with a recoverable Redis failure,
+the fallback event deletes C8/C4/C6 so later reads rebuild from PostgreSQL.
+
 Note that `PROPOSE_CHANGES_HOT_VIEWS` is not used on the write path for direct
 eviction. The write path instead performs an atomic update (not an eviction) via
 `proposeChangesRedisUpdateScript`, which writes C8, C4, and C6 in one round-trip.

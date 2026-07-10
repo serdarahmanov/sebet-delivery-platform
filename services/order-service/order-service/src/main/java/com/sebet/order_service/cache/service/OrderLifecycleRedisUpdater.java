@@ -1,6 +1,7 @@
 package com.sebet.order_service.cache.service;
 
 import com.sebet.order_service.cache.dto.OrderTimelineEntry;
+import com.sebet.order_service.cache.eviction.ScheduledActivationHotViewsCacheEvictionStrategy;
 import com.sebet.order_service.cache.repository.ActiveOrdersRedisRepository;
 import com.sebet.order_service.cache.repository.OrderRedisRepository;
 import com.sebet.order_service.cache.repository.OrderStatusRedisRepository;
@@ -10,12 +11,15 @@ import com.sebet.order_service.cache.repository.StoreActiveOrdersRedisRepository
 import com.sebet.order_service.cache.repository.VerificationCodeRedisRepository;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.shared.enums.OrderStatus;
+import com.sebet.order_service.shared.enums.ScheduleType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 public class OrderLifecycleRedisUpdater {
+
+    private static final String SCHEDULED_ACTIVATION_REASON = "SCHEDULED_ACTIVATION";
 
     private final OrderStatusRedisRepository orderStatusRedisRepository;
     private final OrderTimelineRedisRepository orderTimelineRedisRepository;
@@ -25,6 +29,7 @@ public class OrderLifecycleRedisUpdater {
     private final StoreActiveOrdersRedisRepository storeActiveOrdersRedisRepository;
     private final VerificationCodeRedisRepository verificationCodeRedisRepository;
     private final OrderCacheEvictionService orderCacheEvictionService;
+    private final ScheduledActivationHotViewsCacheEvictionStrategy scheduledActivationHotViewsStrategy;
 
     public void applyTransition(OrderEntity order, OrderStatus newStatus, String changedAt) {
         applyTransition(order, newStatus, changedAt, null);
@@ -59,6 +64,11 @@ public class OrderLifecycleRedisUpdater {
             return;
         }
 
+        if (newStatus == OrderStatus.PENDING && order.getScheduleType() == ScheduleType.SCHEDULED) {
+            activateScheduledOrder(order, orderId, sourceAction, idempotencyKey);
+            return;
+        }
+
         orderStatusRedisRepository.save(orderId, order.getCustomerId(), order.getStoreId(), newStatus.name());
 
         String timelineStatus = toTimelineStatus(newStatus);
@@ -88,6 +98,26 @@ public class OrderLifecycleRedisUpdater {
             orderTimelineRedisRepository.delete(orderId);
         } else {
             orderCacheEvictionService.evictCancelledOrderHotViewsOrRequestEviction(orderId, sourceAction, idempotencyKey);
+        }
+    }
+
+    private void activateScheduledOrder(
+            OrderEntity order,
+            String orderId,
+            String sourceAction,
+            String idempotencyKey
+    ) {
+        try {
+            scheduledActivationHotViewsStrategy.apply(order);
+        } catch (RuntimeException exception) {
+            orderCacheEvictionService.requestEvictionAfterUpdateFailure(
+                    orderId,
+                    scheduledActivationHotViewsStrategy,
+                    SCHEDULED_ACTIVATION_REASON,
+                    sourceAction,
+                    idempotencyKey,
+                    exception
+            );
         }
     }
 }

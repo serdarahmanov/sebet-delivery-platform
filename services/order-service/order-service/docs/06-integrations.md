@@ -95,9 +95,37 @@ Admin/ops also use the internal API to force lifecycle transitions:
 
 ```text
 POST /api/v1/internal/orders/{orderId}/system-cancel       - system-initiated cancellation
+POST /api/v1/internal/orders/{orderId}/admin-cancel        - admin override cancellation
 POST /api/v1/internal/orders/{orderId}/activate-scheduled  - SCHEDULED -> PENDING
-POST /api/v1/internal/orders/{orderId}/cancel-proposal     - AWAITING_CUSTOMER_RESPONSE -> CANCELLED
+POST /api/v1/internal/orders/{orderId}/cancel-active-proposal
+                                                          - cancel proposal only
+POST /api/v1/internal/orders/{orderId}/cancel-proposal-and-order
+                                                          - AWAITING_CUSTOMER_RESPONSE -> CANCELLED
 ```
+
+`activate-scheduled` is a manual admin/support override and requires `Idempotency-Key`.
+The automatic scheduled-order transition job is a separate pending workflow and
+should activate only orders that are actually due.
+
+`system-cancel` requires `Idempotency-Key` and accepts only system-owned reasons:
+`PAYMENT_FAILED`, `NO_RIDERS_AVAILABLE`, `STORE_RESPONSE_TIMEOUT`,
+`AWAITING_CUSTOMER_RESPONSE_TIMEOUT`, and `SYSTEM_ERROR`. It writes the
+cancellation, lifecycle outbox event, and idempotent command response in one
+transaction, then uses the cancelled hot-view fallback pattern to remove C1/C1b
+membership and delete C2/C3/C4/C6 after commit and on idempotent replay.
+`admin-cancel` uses the same payload and Redis cleanup pattern, but is reserved
+for admin/support override and can cancel any order that is not `DELIVERED` or
+already `CANCELLED`.
+
+Proposal cancellation has two separate internal meanings. `cancel-active-proposal`
+will remove the active proposal without cancelling the order, so a corrected
+proposal can be submitted later. `cancel-proposal-and-order` will close the
+proposal and cancel the order.
+
+Internal `cancel-active-proposal` is implemented and requires `Idempotency-Key`.
+It moves `AWAITING_CUSTOMER_RESPONSE -> CONFIRMED`, deletes the durable proposal,
+emits `OrderActiveProposalCancelled`, deletes C8, updates C4 to `CONFIRMED`, and
+removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 with one Redis Lua script.
 
 ## Frontend Clients
 
@@ -113,4 +141,4 @@ Store clients use:
 
 ## Integration Status
 
-The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, `ready`, and `cancel` actions are implemented through the shared lifecycle service. Store `/cancel` requires `Idempotency-Key`, writes the lifecycle event and idempotent command record in the same transaction, and then uses `CANCELLED_ORDER_HOT_VIEWS` to atomically remove C1/C1b memberships and delete C2/C3/C4/C6 through the recoverable Redis fallback pattern. Driver detail and lifecycle actions (`detail`, `pickup`, `arrive`, `complete`, `decline`) are implemented through `DriverOrderLifecycleService`. Internal driver assignment actions (`assign-driver`, `unassign-driver`) are implemented through `InternalDriverAssignmentService`. Order-created, lifecycle, and driver-assignment business events are written to `outbox_event` for Debezium publishing. Deliberate `OrderCacheEvictionRequested` events can also be consumed back by order-service to evict Redis hot views after recoverable Redis direct-eviction failures. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. Store `propose-changes` and remaining internal lifecycle service methods are pending. The delivery-arrival Kafka consumer, Debezium runtime deployment, and WebSocket broker are pending.
+The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, `ready`, and `cancel` actions are implemented through the shared lifecycle service. Store `/cancel` requires `Idempotency-Key`, writes the lifecycle event and idempotent command record in the same transaction, and then uses `CANCELLED_ORDER_HOT_VIEWS` to atomically remove C1/C1b memberships and delete C2/C3/C4/C6 through the recoverable Redis fallback pattern. Driver detail and lifecycle actions (`detail`, `pickup`, `arrive`, `complete`, `decline`) are implemented through `DriverOrderLifecycleService`. Internal driver assignment actions (`assign-driver`, `unassign-driver`) are implemented through `InternalDriverAssignmentService`; internal lifecycle actions (`activate-scheduled`, `system-cancel`, `admin-cancel`, `cancel-active-proposal`) are implemented through `InternalOrderLifecycleService` and require `Idempotency-Key`. Order-created, lifecycle, proposal, and driver-assignment business events are written to `outbox_event` for Debezium publishing. Deliberate `OrderCacheEvictionRequested` events can also be consumed back by order-service to repair Redis hot views after recoverable Redis direct-update failures. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. Store `propose-changes` is implemented; store `cancel-active-proposal` and internal `cancel-proposal-and-order` are pending. The scheduled-order transition job, delivery-arrival Kafka consumer, Debezium runtime deployment, and WebSocket broker are pending.

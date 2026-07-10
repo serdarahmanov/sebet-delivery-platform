@@ -112,7 +112,7 @@ Add unit tests for:
 - active-order removal Lua behavior
 - lock release Lua behavior
 - customer write service behavior when implemented
-- remaining internal lifecycle service behavior when implemented
+- remaining proposal cancellation behavior when implemented: store `cancel-active-proposal` and internal `cancel-proposal-and-order`
 - `OrderLifecycleRedisUpdater` for `OUT_FOR_DELIVERY`, `ARRIVED`, and `DELIVERED` transitions
 
 ## Controller Tests To Add

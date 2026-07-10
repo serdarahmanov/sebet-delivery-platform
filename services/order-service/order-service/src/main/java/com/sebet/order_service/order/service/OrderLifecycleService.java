@@ -1,6 +1,7 @@
 package com.sebet.order_service.order.service;
 
 import com.sebet.order_service.cache.service.OrderLifecycleRedisUpdater;
+import com.sebet.order_service.cache.service.OrderCancelActiveProposalRedisUpdater;
 import com.sebet.order_service.cache.service.OrderProposeChangesRedisUpdater;
 import com.sebet.order_service.order.event.OrderEventOutboxWriter;
 import com.sebet.order_service.persistence.entity.OrderEntity;
@@ -12,6 +13,7 @@ import com.sebet.order_service.persistence.repository.OrderStatusHistoryReposito
 import com.sebet.order_service.shared.enums.OrderCancellationReason;
 import com.sebet.order_service.shared.enums.OrderCancelledBy;
 import com.sebet.order_service.shared.enums.OrderStatus;
+import com.sebet.order_service.shared.enums.ProposalStatus;
 import com.sebet.order_service.shared.exception.DriverNotAssignedException;
 import com.sebet.order_service.shared.exception.OrderInvalidTransitionException;
 import com.sebet.order_service.shared.exception.OrderNotFoundException;
@@ -32,8 +34,14 @@ public class OrderLifecycleService {
 
     private static final String ACTOR_STORE = "STORE";
     private static final String ACTOR_DRIVER = "DRIVER";
+    private static final String ACTOR_SYSTEM = "SYSTEM";
     public static final String STORE_CANCEL_ORDER_ACTION = "STORE_CANCEL_ORDER";
     public static final String STORE_PROPOSE_CHANGES_ACTION = "STORE_PROPOSE_CHANGES";
+    public static final String INTERNAL_ACTIVATE_SCHEDULED_ACTION = "INTERNAL_ACTIVATE_SCHEDULED";
+    public static final String INTERNAL_SYSTEM_CANCEL_ACTION = "INTERNAL_SYSTEM_CANCEL";
+    public static final String INTERNAL_ADMIN_CANCEL_ACTION = "INTERNAL_ADMIN_CANCEL";
+    public static final String INTERNAL_CANCEL_ACTIVE_PROPOSAL_ACTION = "INTERNAL_CANCEL_ACTIVE_PROPOSAL";
+    public static final String INTERNAL_CANCEL_PROPOSAL_AND_ORDER_ACTION = "INTERNAL_CANCEL_PROPOSAL_AND_ORDER";
 
     private final OrderRepository orderRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
@@ -41,6 +49,7 @@ public class OrderLifecycleService {
     private final OrderEventOutboxWriter orderEventOutboxWriter;
     private final OrderProposalRepository orderProposalRepository;
     private final OrderProposeChangesRedisUpdater orderProposeChangesRedisUpdater;
+    private final OrderCancelActiveProposalRedisUpdater orderCancelActiveProposalRedisUpdater;
 
     @Transactional
     public OrderLifecycleResult storeAccept(String orderId, String storeId) {
@@ -96,6 +105,205 @@ public class OrderLifecycleService {
                 null,
                 null
         );
+    }
+
+    @Transactional
+    public OrderLifecycleResult activateScheduled(String orderId) {
+        OrderLifecycleResult result = activateScheduledInTransaction(orderId);
+        registerRedisUpdate(
+                result.order(),
+                OrderStatus.PENDING,
+                result.changedAt(),
+                INTERNAL_ACTIVATE_SCHEDULED_ACTION
+        );
+        return result;
+    }
+
+    @Transactional
+    public OrderLifecycleResult activateScheduledWithoutRedisUpdate(String orderId) {
+        return activateScheduledInTransaction(orderId);
+    }
+
+    public void updateScheduledActivationRedisViews(
+            OrderEntity order,
+            OffsetDateTime changedAt,
+            String idempotencyKey
+    ) {
+        orderLifecycleRedisUpdater.applyTransition(
+                order,
+                OrderStatus.PENDING,
+                changedAt.toString(),
+                INTERNAL_ACTIVATE_SCHEDULED_ACTION,
+                idempotencyKey
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public void updateScheduledActivationRedisViews(String orderId, String idempotencyKey) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+        OffsetDateTime changedAt = order.getUpdatedAt() == null ? OffsetDateTime.now() : order.getUpdatedAt();
+        updateScheduledActivationRedisViews(order, changedAt, idempotencyKey);
+    }
+
+    @Transactional
+    public OrderLifecycleResult systemCancelWithoutRedisUpdate(
+            String orderId,
+            OrderCancellationReason reason,
+            String metadataJson
+    ) {
+        return cancelOrderWithoutRedisUpdate(orderId, reason, metadataJson, true);
+    }
+
+    @Transactional
+    public OrderLifecycleResult adminCancelWithoutRedisUpdate(
+            String orderId,
+            OrderCancellationReason reason,
+            String metadataJson
+    ) {
+        return cancelOrderWithoutRedisUpdate(orderId, reason, metadataJson, false);
+    }
+
+    private OrderLifecycleResult cancelOrderWithoutRedisUpdate(
+            String orderId,
+            OrderCancellationReason reason,
+            String metadataJson,
+            boolean enforceSystemFlowGuard
+    ) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus == OrderStatus.DELIVERED
+                || previousStatus == OrderStatus.CANCELLED
+                || (enforceSystemFlowGuard && (previousStatus == OrderStatus.OUT_FOR_DELIVERY
+                || previousStatus == OrderStatus.ARRIVED))) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.CANCELLED);
+        }
+
+        OffsetDateTime changedAt = OffsetDateTime.now();
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setUpdatedAt(changedAt);
+        order.setCancelledAt(changedAt);
+        order.setCancelledBy(OrderCancelledBy.SYSTEM);
+        order.setCancellationReason(reason);
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+
+        if (previousStatus == OrderStatus.AWAITING_CUSTOMER_RESPONSE) {
+            orderProposalRepository.findByOrderId(id).ifPresent(proposal -> {
+                proposal.setStatus(ProposalStatus.SYSTEM_CANCELLED);
+                orderProposalRepository.saveAndFlush(proposal);
+            });
+        }
+
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(OrderStatus.CANCELLED)
+                .changedByType(ACTOR_SYSTEM)
+                .reason(reason.name())
+                .metadataJson(metadataJson)
+                .createdAt(changedAt)
+                .build());
+
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                OrderStatus.CANCELLED,
+                changedAt,
+                ACTOR_SYSTEM,
+                null,
+                reason.name(),
+                metadataJson
+        );
+        return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.CANCELLED, changedAt);
+    }
+
+    public void evictSystemCancelledRedisViews(String orderId, String idempotencyKey) {
+        evictCancelledRedisViews(orderId, INTERNAL_SYSTEM_CANCEL_ACTION, idempotencyKey);
+    }
+
+    public void evictAdminCancelledRedisViews(String orderId, String idempotencyKey) {
+        evictCancelledRedisViews(orderId, INTERNAL_ADMIN_CANCEL_ACTION, idempotencyKey);
+    }
+
+    private void evictCancelledRedisViews(String orderId, String sourceAction, String idempotencyKey) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+        OffsetDateTime changedAt = order.getCancelledAt() == null ? OffsetDateTime.now() : order.getCancelledAt();
+        evictCancelledRedisViews(order, changedAt, sourceAction, idempotencyKey);
+    }
+
+    public void evictSystemCancelledRedisViews(
+            OrderEntity order,
+            OffsetDateTime changedAt,
+            String idempotencyKey
+    ) {
+        evictCancelledRedisViews(order, changedAt, INTERNAL_SYSTEM_CANCEL_ACTION, idempotencyKey);
+    }
+
+    public void evictAdminCancelledRedisViews(
+            OrderEntity order,
+            OffsetDateTime changedAt,
+            String idempotencyKey
+    ) {
+        evictCancelledRedisViews(order, changedAt, INTERNAL_ADMIN_CANCEL_ACTION, idempotencyKey);
+    }
+
+    private void evictCancelledRedisViews(
+            OrderEntity order,
+            OffsetDateTime changedAt,
+            String sourceAction,
+            String idempotencyKey
+    ) {
+        orderLifecycleRedisUpdater.applyTransition(
+                order,
+                OrderStatus.CANCELLED,
+                changedAt.toString(),
+                sourceAction,
+                idempotencyKey
+        );
+    }
+
+    private OrderLifecycleResult activateScheduledInTransaction(String orderId) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus != OrderStatus.SCHEDULED) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.PENDING);
+        }
+
+        OffsetDateTime changedAt = OffsetDateTime.now();
+        order.setStatus(OrderStatus.PENDING);
+        order.setUpdatedAt(changedAt);
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(OrderStatus.PENDING)
+                .changedByType(ACTOR_SYSTEM)
+                .reason("SCHEDULED_ACTIVATED")
+                .createdAt(changedAt)
+                .build());
+
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                OrderStatus.PENDING,
+                changedAt,
+                ACTOR_SYSTEM,
+                null,
+                "SCHEDULED_ACTIVATED",
+                null
+        );
+        return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.PENDING, changedAt);
     }
 
     @Transactional
@@ -182,6 +390,122 @@ public class OrderLifecycleService {
         orderProposeChangesRedisUpdater.apply(order, proposal, idempotencyKey);
     }
 
+    @Transactional
+    public OrderLifecycleResult cancelActiveProposalWithoutRedisUpdate(String orderId) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus != OrderStatus.AWAITING_CUSTOMER_RESPONSE) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.CONFIRMED);
+        }
+
+        OrderProposalEntity proposal = orderProposalRepository.findByOrderId(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OffsetDateTime changedAt = OffsetDateTime.now();
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setUpdatedAt(changedAt);
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+        proposal.setStatus(ProposalStatus.CANCELLED);
+        orderProposalRepository.saveAndFlush(proposal);
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(OrderStatus.CONFIRMED)
+                .changedByType(ACTOR_SYSTEM)
+                .reason("ACTIVE_PROPOSAL_CANCELLED")
+                .createdAt(changedAt)
+                .build());
+
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                OrderStatus.CONFIRMED,
+                changedAt,
+                ACTOR_SYSTEM,
+                null,
+                "ACTIVE_PROPOSAL_CANCELLED",
+                null
+        );
+        return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.CONFIRMED, changedAt);
+    }
+
+    @Transactional
+    public OrderLifecycleResult cancelProposalAndOrderWithoutRedisUpdate(String orderId) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus != OrderStatus.AWAITING_CUSTOMER_RESPONSE) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.CANCELLED);
+        }
+
+        OrderProposalEntity proposal = orderProposalRepository.findByOrderId(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OffsetDateTime changedAt = OffsetDateTime.now();
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setUpdatedAt(changedAt);
+        order.setCancelledAt(changedAt);
+        order.setCancelledBy(OrderCancelledBy.SYSTEM);
+        order.setCancellationReason(OrderCancellationReason.AWAITING_CUSTOMER_RESPONSE_TIMEOUT);
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+        proposal.setStatus(ProposalStatus.TIMED_OUT);
+        orderProposalRepository.saveAndFlush(proposal);
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(OrderStatus.CANCELLED)
+                .changedByType(ACTOR_SYSTEM)
+                .reason(OrderCancellationReason.AWAITING_CUSTOMER_RESPONSE_TIMEOUT.name())
+                .createdAt(changedAt)
+                .build());
+
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                OrderStatus.CANCELLED,
+                changedAt,
+                ACTOR_SYSTEM,
+                null,
+                OrderCancellationReason.AWAITING_CUSTOMER_RESPONSE_TIMEOUT.name(),
+                null
+        );
+        return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.CANCELLED, changedAt);
+    }
+
+    public void updateCancelActiveProposalRedisViews(
+            OrderEntity order,
+            String idempotencyKey
+    ) {
+        orderCancelActiveProposalRedisUpdater.apply(order, idempotencyKey);
+    }
+
+    @Transactional(readOnly = true)
+    public void updateCancelActiveProposalRedisViews(String orderId, String idempotencyKey) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+        orderCancelActiveProposalRedisUpdater.apply(order, idempotencyKey);
+    }
+
+    public void evictCancelProposalAndOrderRedisViews(
+            OrderEntity order,
+            OffsetDateTime changedAt,
+            String idempotencyKey
+    ) {
+        evictCancelledRedisViews(order, changedAt, INTERNAL_CANCEL_PROPOSAL_AND_ORDER_ACTION, idempotencyKey);
+    }
+
+    public void evictCancelProposalAndOrderRedisViews(String orderId, String idempotencyKey) {
+        evictCancelledRedisViews(orderId, INTERNAL_CANCEL_PROPOSAL_AND_ORDER_ACTION, idempotencyKey);
+    }
+
     private OrderLifecycleResult storeCancel(
             String orderId,
             String storeId,
@@ -207,6 +531,14 @@ public class OrderLifecycleService {
         order.setCancellationReason(reason);
 
         OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+
+        if (previousStatus == OrderStatus.AWAITING_CUSTOMER_RESPONSE) {
+            orderProposalRepository.findByOrderId(id).ifPresent(proposal -> {
+                proposal.setStatus(ProposalStatus.STORE_CANCELLED);
+                orderProposalRepository.saveAndFlush(proposal);
+            });
+        }
+
         orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
                 .orderId(savedOrder.getId())
                 .fromStatus(previousStatus)

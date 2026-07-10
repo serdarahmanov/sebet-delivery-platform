@@ -34,6 +34,17 @@ Implemented:
   - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY` through `POST /api/v1/driver/orders/{orderId}/pickup`
   - `OUT_FOR_DELIVERY -> ARRIVED` through `POST /api/v1/driver/orders/{orderId}/arrive`
   - `ARRIVED -> DELIVERED` through `POST /api/v1/driver/orders/{orderId}/complete`
+- `OrderLifecycleService` implements internal scheduled activation:
+  - manual admin/support `SCHEDULED -> PENDING` through `POST /api/v1/internal/orders/{orderId}/activate-scheduled`
+  - activation persists status history, emits `OrderActivated`, and stores the idempotent command response in one database transaction
+  - after commit and on idempotent replay, activation atomically moves Redis hot views from Cache 1c to Cache 1 and Cache 1b and updates Cache 4 through a Lua script
+  - recoverable Redis activation-update failures write an `OrderCacheEvictionRequested` event for `SCHEDULED_ACTIVATION_HOT_VIEWS`
+- `OrderLifecycleService` implements internal system cancellation:
+  - automated system `PENDING`, `CONFIRMED`, `AWAITING_CUSTOMER_RESPONSE`, `SCHEDULED`, or `READY_FOR_PICKUP` -> `CANCELLED` through `POST /api/v1/internal/orders/{orderId}/system-cancel`
+  - admin override cancellation for any non-`DELIVERED` order through `POST /api/v1/internal/orders/{orderId}/admin-cancel`
+  - allowed reasons are `PAYMENT_FAILED`, `NO_RIDERS_AVAILABLE`, `STORE_RESPONSE_TIMEOUT`, `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`, and `SYSTEM_ERROR`
+  - cancellation persists status history, emits the lifecycle outbox event, and stores the idempotent command response in one database transaction
+  - after commit and on idempotent replay, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS` to remove C1/C1b membership and delete C2/C3/C4/C6 through the recoverable eviction fallback pattern
 - `DriverOrderLifecycleService` implements driver delivery detail and assignment decline:
   - `GET /api/v1/driver/orders/{orderId}` returns assigned delivery detail from C2 + C4, with DB fallback.
   - `POST /api/v1/driver/orders/{orderId}/decline` clears `driverId` / `driverAssignedAt` before pickup, writes `DriverAssignmentDeclined` and the idempotent command record in the same database transaction, then tries to evict C2 after commit.
@@ -64,11 +75,25 @@ Implemented:
   - transitions `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE`, appends status history, persists the proposal record and `OrderProposedToCustomer` outbox event, and stores the idempotent command response in one database transaction
   - atomically updates C8, C4, and C6 via `proposeChangesRedisUpdateScript` after commit; recoverable Redis failures fall back to `requestEvictionAfterUpdateFailure` with `PROPOSE_CHANGES_HOT_VIEWS`, which writes one `OrderCacheEvictionRequested` event without attempting direct eviction
   - `OrderProposeChangesRedisUpdater` builds and executes the Lua script; `ProposeChangesHotViewsEvictionStrategy` handles grouped eviction of C8 + C4 + C6 for the consumer path
+- `InternalOrderLifecycleService.cancelActiveProposal` implements `POST /api/v1/internal/orders/{orderId}/cancel-active-proposal`:
+  - transitions `AWAITING_CUSTOMER_RESPONSE -> CONFIRMED`
+  - marks the proposal row as `CANCELLED` (retained for audit; not deleted)
+  - appends status history, emits `OrderActiveProposalCancelled`, and stores the idempotent command response in one database transaction
+  - atomically deletes C8, updates C4 to `CONFIRMED`, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 via `cancelActiveProposalRedisUpdateScript`; recoverable Redis failures fall back to `CANCEL_ACTIVE_PROPOSAL_HOT_VIEWS`
+- `InternalOrderLifecycleService.cancelProposalAndOrder` implements `POST /api/v1/internal/orders/{orderId}/cancel-proposal-and-order`:
+  - transitions `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`
+  - marks the proposal row as `TIMED_OUT` (retained for audit; not deleted)
+  - cancellation reason is fixed to `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`
+  - appends status history, emits `OrderCancelled`, and stores the idempotent command response in one database transaction
+  - after commit and on idempotent replay, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS` (C1, C1b, C2, C3, C4, C6, C8) through the recoverable eviction fallback pattern
+- Any cancellation applied to an order in `AWAITING_CUSTOMER_RESPONSE` (system-cancel, admin-cancel, store cancel) marks the active proposal row as `SYSTEM_CANCELLED` or `STORE_CANCELLED` within the same database transaction.
+- `ProposalStatus` enum tracks the full proposal lifecycle: `ACTIVE`, `CANCELLED`, `TIMED_OUT`, `SYSTEM_CANCELLED`, `STORE_CANCELLED`, `ACCEPTED`, `REJECTED`.
+- `order_proposals.uq_order_proposals_order_id` unique constraint replaced by a partial unique index (`WHERE status = 'ACTIVE'`) to allow historical proposal rows while enforcing at most one active proposal per order.
 
 Pending:
 
-- remaining lifecycle transitions: customer cancel, scheduled activation, proposal resolution, and delivery cancellation paths
-- proposals write path (`respond-to-changes`)
+- remaining lifecycle transitions: customer cancel, proposal resolution, proposal cancellation, and delivery cancellation paths
+- proposals write paths (`respond-to-changes`, store `cancel-active-proposal`)
 - scheduled order update write path
 - hot-view repair/eviction policy for non-checkout write paths beyond the implemented store and driver assignment/lifecycle transitions
 
@@ -153,12 +178,11 @@ Implemented:
 
 - `POST /{orderId}/assign-driver` - sets `driverId` and `driverAssignedAt`
 - `POST /{orderId}/unassign-driver` - clears `driverId`; valid on any non-terminal status
-
-Pending:
-
-- `POST /{orderId}/system-cancel` - system-initiated cancellation
 - `POST /{orderId}/activate-scheduled` - `SCHEDULED -> PENDING`
-- `POST /{orderId}/cancel-proposal` - `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`
+- `POST /{orderId}/system-cancel` - system-initiated cancellation
+- `POST /{orderId}/admin-cancel` - admin override cancellation
+- `POST /{orderId}/cancel-active-proposal` - cancel active proposal without cancelling the order; marks proposal `CANCELLED`
+- `POST /{orderId}/cancel-proposal-and-order` - `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`; marks proposal `TIMED_OUT`
 
 ## Error Handling
 
