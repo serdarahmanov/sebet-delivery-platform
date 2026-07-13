@@ -40,6 +40,7 @@ public class OrderEventOutboxWriter {
     private static final String ORDER_CACHE_EVICTION_REQUESTED = "OrderCacheEvictionRequested";
     private static final String ORDER_PROPOSED_TO_CUSTOMER = "OrderProposedToCustomer";
     private static final String ORDER_PROPOSAL_ACCEPTED = "OrderProposalAccepted";
+    private static final String ORDER_SCHEDULED_UPDATED = "OrderScheduledUpdated";
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
@@ -141,6 +142,25 @@ public class OrderEventOutboxWriter {
                 iso(respondedAt)
         );
         saveEvent(order, ORDER_PROPOSAL_ACCEPTED, respondedAt, data);
+    }
+
+    public void saveScheduledOrderUpdated(
+            OrderEntity order,
+            String newScheduledWindowStart,
+            boolean addressUpdated,
+            boolean phoneNumberUpdated,
+            OffsetDateTime updatedAt
+    ) {
+        ScheduledOrderUpdatedEventData data = new ScheduledOrderUpdatedEventData(
+                order.getId().toString(),
+                order.getCustomerId(),
+                order.getStoreId(),
+                newScheduledWindowStart,
+                addressUpdated,
+                phoneNumberUpdated,
+                iso(updatedAt)
+        );
+        saveEvent(order, ORDER_SCHEDULED_UPDATED, updatedAt, data);
     }
 
     public void saveOrderProposedToCustomer(OrderEntity order, String itemsJson, OffsetDateTime proposedAt) {

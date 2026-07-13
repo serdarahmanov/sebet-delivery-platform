@@ -17,4 +17,5 @@ public class DeliveryAddress {
     private String city;
     private double lat;
     private double lng;
+    private String phoneNumber;
 }

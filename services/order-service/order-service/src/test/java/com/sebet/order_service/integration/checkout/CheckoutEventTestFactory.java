@@ -89,7 +89,8 @@ public final class CheckoutEventTestFactory {
                 "42",
                 "2",
                 "5",
-                "Call before arrival"
+                "Call before arrival",
+                "+998901234567"
         );
     }
 

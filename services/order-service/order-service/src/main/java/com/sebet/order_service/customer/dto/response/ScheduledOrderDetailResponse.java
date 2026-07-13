@@ -19,8 +19,11 @@ public record ScheduledOrderDetailResponse(
         /** Human-readable label, e.g. {@code "#GR-20455"}. */
         String orderNumber,
 
-        /** ISO-8601 timestamp of the requested delivery window. */
-        String scheduledFor,
+        /** ISO-8601 start of the requested delivery window. */
+        String scheduledWindowStart,
+
+        /** ISO-8601 end of the requested delivery window (start + configured window duration). */
+        String scheduledWindowEnd,
 
         String storeName,
         String storeId,

@@ -9,5 +9,6 @@ public record DeliveryAddressDto(
         String street,
         String city,
         double lat,
-        double lng
+        double lng,
+        String phoneNumber
 ) {}

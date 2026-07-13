@@ -2,6 +2,7 @@ package com.sebet.order_service.customer.controller;
 
 import com.sebet.order_service.customer.dto.request.RespondToOrderChangesRequest;
 import com.sebet.order_service.customer.dto.request.UpdateScheduledOrderRequest;
+import com.sebet.order_service.customer.dto.response.ActivateScheduledNowResponse;
 import com.sebet.order_service.customer.dto.response.*;
 import com.sebet.order_service.customer.service.CustomerOrderLifecycleService;
 import com.sebet.order_service.customer.service.CustomerOrderQueryService;
@@ -123,9 +124,9 @@ public class CustomerOrderController {
     public ResponseEntity<ScheduledOrderDetailResponse> updateScheduledOrder(
             @RequestHeader("X-User-Id") String userId,
             @PathVariable String orderId,
-            @RequestBody UpdateScheduledOrderRequest request
+            @RequestBody @Valid UpdateScheduledOrderRequest request
     ) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        return ResponseEntity.ok(lifecycleService.updateScheduledOrder(userId, orderId, request));
     }
 
     // ── Cancelled ────────────────────────────────────────────────────────────
@@ -264,6 +265,25 @@ public class CustomerOrderController {
             @RequestBody @Valid RespondToOrderChangesRequest request
     ) {
         return ResponseEntity.ok(lifecycleService.respondToChanges(userId, orderId, request));
+    }
+
+    // ── Activate scheduled now ───────────────────────────────────────────────
+
+    /**
+     * Customer requests their scheduled order to be dispatched immediately.
+     *
+     * Transition : SCHEDULED → PENDING
+     * Actor      : USER (customer-initiated, distinct from the T-30min background job)
+     *
+     * Returns 404 if the order does not exist or does not belong to the caller.
+     * Returns 409 if the order is not in SCHEDULED status.
+     */
+    @PostMapping("/scheduled/{orderId}/activate-now")
+    public ResponseEntity<ActivateScheduledNowResponse> activateScheduledNow(
+            @RequestHeader("X-User-Id") String userId,
+            @PathVariable String orderId
+    ) {
+        return ResponseEntity.ok(lifecycleService.activateNow(userId, orderId));
     }
 
     // ── Cancel ───────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ Endpoint groups:
 - `GET /api/v1/orders/active/{orderId}`
 - `GET /api/v1/orders/scheduled/{orderId}`
 - `PATCH /api/v1/orders/scheduled/{orderId}`
+- `POST /api/v1/orders/scheduled/{orderId}/activate-now`
 - `GET /api/v1/orders/cancelled/{orderId}`
 - `GET /api/v1/orders/{orderId}`
 - `GET /api/v1/orders/{orderId}/status`
@@ -156,11 +157,14 @@ return another customer's order.
 
 ### Customer API - Write Endpoints
 
-The following customer write endpoints still throw `UnsupportedOperationException`:
+The following customer write endpoints are implemented in `CustomerOrderLifecycleService`:
 
-- `PATCH /api/v1/orders/scheduled/{orderId}` - modify scheduled order
-- `POST /api/v1/orders/{orderId}/respond-to-changes` - respond to store proposal
-- `POST /api/v1/orders/{orderId}/cancel` - cancel order
+| Endpoint | Behavior | Status |
+|---|---|---|
+| `PATCH /api/v1/orders/scheduled/{orderId}` | partial update — delivery time, address, and/or phone number; validates slot alignment, min lead time, store working hours, and modification window | implemented |
+| `POST /api/v1/orders/scheduled/{orderId}/activate-now` | `SCHEDULED -> PENDING`; customer-initiated immediate dispatch | implemented |
+| `POST /api/v1/orders/{orderId}/respond-to-changes` | accept (all or with modifications) or cancel in response to a store proposal | implemented |
+| `POST /api/v1/orders/{orderId}/cancel` | `PENDING`, `CONFIRMED`, or `SCHEDULED` -> `CANCELLED`; reason fixed to `USER_REQUESTED` | implemented |
 
 ### Store API - Read Endpoints
 
@@ -185,7 +189,7 @@ The following store write endpoints are implemented through `StoreOrderLifecycle
 | `POST /api/v1/store/orders/{orderId}/ready` | `CONFIRMED -> READY_FOR_PICKUP` | implemented |
 | `POST /api/v1/store/orders/{orderId}/cancel` | `CONFIRMED` or `AWAITING_CUSTOMER_RESPONSE` -> `CANCELLED` | implemented |
 | `POST /api/v1/store/orders/{orderId}/propose-changes` | `CONFIRMED` -> `AWAITING_CUSTOMER_RESPONSE` | implemented |
-| `POST /api/v1/store/orders/{orderId}/cancel-active-proposal` | cancel active proposal only, allowing a corrected proposal later | pending |
+| `POST /api/v1/store/orders/{orderId}/cancel-active-proposal` | cancel active proposal only, allowing a corrected proposal later | pending (controller stub; internal equivalent works via `POST /api/v1/internal/orders/{orderId}/cancel-active-proposal`) |
 
 Invalid lifecycle transitions return `409 Conflict` with `ORDER_INVALID_TRANSITION`.
 Orders that do not exist or do not belong to the calling store return `404 ORDER_NOT_FOUND`.

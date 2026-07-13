@@ -84,6 +84,18 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("ORDER_INVALID_TRANSITION", ex.getMessage()));
     }
 
+    @ExceptionHandler(ScheduledOrderModificationWindowClosedException.class)
+    public ResponseEntity<ErrorResponse> handleModificationWindowClosed(ScheduledOrderModificationWindowClosedException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("MODIFICATION_WINDOW_CLOSED", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidScheduledWindowException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidScheduledWindow(InvalidScheduledWindowException ex) {
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.of("INVALID_SCHEDULED_WINDOW", ex.getMessage()));
+    }
+
     @ExceptionHandler(IdempotencyKeyConflictException.class)
     public ResponseEntity<ErrorResponse> handleIdempotencyKeyConflict(IdempotencyKeyConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)

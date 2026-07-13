@@ -132,6 +132,12 @@ public class OrderEntity {
 
     private OffsetDateTime cancelledAt;
 
+    @Column(length = 30)
+    private String deliveryPhoneNumber;
+
+    @Column(columnDefinition = "text")
+    private String deliveredProofImageUrl;
+
     @PrePersist
     void prePersist() {
         OffsetDateTime now = OffsetDateTime.now();

@@ -189,6 +189,46 @@ public class OrderRedisConfig {
     }
 
     /**
+     * Cache 1c + Cache 2 — atomic scheduled-order update.
+     *
+     * Conditionally updates the Cache 1c ZSET score when the customer reschedules
+     * a delivery window, and conditionally updates the Cache 2 snapshot in-place
+     * when address or phone number changes.  Both operations are skipped when the
+     * corresponding ARGV sentinel is an empty string.
+     *
+     * Cache 2 is only written when the key already exists (KEEPTTL preserves the
+     * remaining TTL).  If the snapshot was already evicted there is no stale entry
+     * to worry about — the next read will rebuild from the DB.
+     *
+     * Requires Redis 6.0+ for the KEEPTTL option on SET.
+     *
+     * KEYS[1] = store:scheduled_orders:{storeId}  (C1c — ZSET)
+     * KEYS[2] = order:{orderId}                   (C2  — STRING)
+     * ARGV[1] = orderId (ZSET member)
+     * ARGV[2] = new epoch-millis score, or "" to skip the ZSET update
+     * ARGV[3] = full updated Cache 2 JSON, or "" to skip the snapshot update
+     * Returns: 1 always.
+     */
+    @Bean
+    public RedisScript<Long> updateScheduledOrderRedisScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(
+                "if ARGV[2] ~= '' then " +
+                "  redis.call('zrem', KEYS[1], ARGV[1]) " +
+                "  redis.call('zadd', KEYS[1], tonumber(ARGV[2]), ARGV[1]) " +
+                "end " +
+                "if ARGV[3] ~= '' then " +
+                "  if redis.call('exists', KEYS[2]) == 1 then " +
+                "    redis.call('set', KEYS[2], ARGV[3], 'keepttl') " +
+                "  end " +
+                "end " +
+                "return 1"
+        );
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
      * Atomic cancellation hot-view cleanup.
      *
      * KEYS[1] = user:active_orders:{userId}

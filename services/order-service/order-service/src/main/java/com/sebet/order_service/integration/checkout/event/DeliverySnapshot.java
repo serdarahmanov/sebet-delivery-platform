@@ -12,6 +12,7 @@ public record DeliverySnapshot(
         String apartment,
         String entrance,
         String floor,
-        String note
+        String note,
+        String phoneNumber
 ) {
 }

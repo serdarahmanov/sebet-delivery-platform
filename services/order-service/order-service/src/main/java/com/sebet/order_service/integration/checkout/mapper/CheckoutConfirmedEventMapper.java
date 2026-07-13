@@ -44,6 +44,7 @@ public class CheckoutConfirmedEventMapper {
                 amount(money.totalAmount()),
                 money.currency(),
                 toJson(payload),
+                payload.deliveryAddress().phoneNumber(),
                 payload.deliveryAddress().lat(),
                 payload.deliveryAddress().lng(),
                 storeLocation.lat(),

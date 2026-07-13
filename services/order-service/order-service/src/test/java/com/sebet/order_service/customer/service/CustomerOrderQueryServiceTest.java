@@ -37,6 +37,7 @@ import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ProductUnit;
 import com.sebet.order_service.shared.enums.ScheduleType;
 import com.sebet.order_service.shared.exception.OrderNotFoundException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -57,6 +58,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CustomerOrderQueryServiceTest {
 
@@ -85,6 +87,12 @@ class CustomerOrderQueryServiceTest {
             orderStatusHistoryRepository,
             objectMapper
     );
+
+    @BeforeEach
+    void setUpValueFields() {
+        ReflectionTestUtils.setField(service, "modificationCutoffMinutes", 40);
+        ReflectionTestUtils.setField(service, "deliveryWindowDurationMinutes", 30);
+    }
 
     // ── getOrderHistory ───────────────────────────────────────────────────────
 

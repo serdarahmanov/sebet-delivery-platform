@@ -369,7 +369,8 @@ public class StoreOrderQueryService {
                     node.path("street").asText(null),
                     node.path("city").asText(null),
                     order.getDeliveryLat().doubleValue(),
-                    order.getDeliveryLng().doubleValue()
+                    order.getDeliveryLng().doubleValue(),
+                    order.getDeliveryPhoneNumber()
             );
         } catch (JsonProcessingException exception) {
             log.warn("Failed to parse deliveryAddressJson for order {}", order.getId(), exception);
@@ -377,7 +378,8 @@ public class StoreOrderQueryService {
                     null,
                     null,
                     order.getDeliveryLat().doubleValue(),
-                    order.getDeliveryLng().doubleValue()
+                    order.getDeliveryLng().doubleValue(),
+                    order.getDeliveryPhoneNumber()
             );
         }
     }

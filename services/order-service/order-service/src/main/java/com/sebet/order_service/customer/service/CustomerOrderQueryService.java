@@ -45,6 +45,7 @@ import com.sebet.order_service.shared.enums.RefundStatus;
 import com.sebet.order_service.shared.exception.OrderNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -92,6 +93,12 @@ public class CustomerOrderQueryService {
     private final OrderItemRepository orderItemRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
     private final ObjectMapper objectMapper;
+
+    @Value("${order-service.scheduled-order.modification-cutoff-minutes:40}")
+    private int modificationCutoffMinutes;
+
+    @Value("${order-service.scheduled-order.delivery-window-duration-minutes:30}")
+    private int deliveryWindowDurationMinutes;
 
     // ── History ──────────────────────────────────────────────────────────────
 
@@ -166,10 +173,13 @@ public class CustomerOrderQueryService {
         List<OrderItemEntity> items =
                 orderItemRepository.findByOrderIdOrderByLineNumberAsc(order.getId());
 
+        OffsetDateTime windowStart = order.getScheduledFor();
+        OffsetDateTime windowEnd = windowStart == null ? null : windowStart.plusMinutes(deliveryWindowDurationMinutes);
         return new ScheduledOrderDetailResponse(
                 orderId,
                 orderNumber(order.getId()),
-                iso(order.getScheduledFor()),
+                iso(windowStart),
+                iso(windowEnd),
                 order.getStoreId(),  // TODO: store name from store service
                 order.getStoreId(),
                 toDeliveryAddressDtoFromEntity(order),
@@ -448,20 +458,22 @@ public class CustomerOrderQueryService {
                     node.path("street").asText(null),
                     node.path("city").asText(null),
                     order.getDeliveryLat().doubleValue(),
-                    order.getDeliveryLng().doubleValue()
+                    order.getDeliveryLng().doubleValue(),
+                    order.getDeliveryPhoneNumber()
             );
         } catch (JsonProcessingException e) {
             log.warn("Failed to parse deliveryAddressJson for order {}", order.getId(), e);
             return new DeliveryAddressDto(null, null,
                     order.getDeliveryLat().doubleValue(),
-                    order.getDeliveryLng().doubleValue());
+                    order.getDeliveryLng().doubleValue(),
+                    order.getDeliveryPhoneNumber());
         }
     }
 
     private DeliveryAddressDto toDeliveryAddressDto(DeliveryAddress address) {
         if (address == null) return null;
         return new DeliveryAddressDto(address.getStreet(), address.getCity(),
-                address.getLat(), address.getLng());
+                address.getLat(), address.getLng(), address.getPhoneNumber());
     }
 
     private StoreLocationDto toStoreLocationDto(StoreLocation location) {
@@ -508,7 +520,7 @@ public class CustomerOrderQueryService {
 
     private boolean canCancel(OrderEntity order) {
         if (order.getScheduledFor() == null) return false;
-        return OffsetDateTime.now().plusHours(1).isBefore(order.getScheduledFor());
+        return OffsetDateTime.now().plusMinutes(modificationCutoffMinutes).isBefore(order.getScheduledFor());
     }
 
     private String storeName(RedisOrder snapshot) {

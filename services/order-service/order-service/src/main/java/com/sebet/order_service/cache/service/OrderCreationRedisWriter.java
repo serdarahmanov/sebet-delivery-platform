@@ -104,6 +104,7 @@ public class OrderCreationRedisWriter {
                     .city(address.path("city").asText(null))
                     .lat(order.getDeliveryLat().doubleValue())
                     .lng(order.getDeliveryLng().doubleValue())
+                    .phoneNumber(order.getDeliveryPhoneNumber())
                     .build();
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException(

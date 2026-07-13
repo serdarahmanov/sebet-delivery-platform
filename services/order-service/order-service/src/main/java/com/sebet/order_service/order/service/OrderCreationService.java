@@ -72,6 +72,7 @@ public class OrderCreationService {
                 .totalAmount(command.totalAmount())
                 .currency(command.currency())
                 .deliveryAddressJson(command.deliveryAddressJson())
+                .deliveryPhoneNumber(command.phoneNumber())
                 .deliveryLat(command.deliveryLat())
                 .deliveryLng(command.deliveryLng())
                 .storeLat(command.storeLat())

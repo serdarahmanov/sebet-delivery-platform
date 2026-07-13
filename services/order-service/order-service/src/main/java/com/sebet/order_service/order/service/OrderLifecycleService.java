@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -321,6 +322,101 @@ public class OrderLifecycleService {
                 null
         );
         return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.PENDING, changedAt);
+    }
+
+    @Transactional
+    public OrderLifecycleResult customerActivateScheduled(String orderId, String userId) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findByIdAndCustomerId(id, userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus != OrderStatus.SCHEDULED) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.PENDING);
+        }
+
+        OffsetDateTime changedAt = OffsetDateTime.now();
+        order.setStatus(OrderStatus.PENDING);
+        order.setUpdatedAt(changedAt);
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(OrderStatus.PENDING)
+                .changedByType(ACTOR_USER)
+                .changedById(userId)
+                .reason("CUSTOMER_REQUESTED_ASAP")
+                .createdAt(changedAt)
+                .build());
+
+        orderEventOutboxWriter.saveOrderStatusTransition(
+                savedOrder,
+                previousStatus,
+                OrderStatus.PENDING,
+                changedAt,
+                ACTOR_USER,
+                userId,
+                "CUSTOMER_REQUESTED_ASAP",
+                null
+        );
+        return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.PENDING, changedAt);
+    }
+
+    @Transactional(readOnly = true)
+    public OrderEntity loadScheduledOrderForCustomer(String orderId, String userId) {
+        UUID id = parseOrderId(orderId);
+        return orderRepository.findByIdAndCustomerId(id, userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+    }
+
+    @Transactional
+    public OrderEntity customerUpdateScheduled(
+            String orderId,
+            String userId,
+            OffsetDateTime newScheduledFor,
+            String newDeliveryAddressJson,
+            BigDecimal newDeliveryLat,
+            BigDecimal newDeliveryLng,
+            String newPhoneNumber
+    ) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findByIdAndCustomerId(id, userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        if (order.getStatus() != OrderStatus.SCHEDULED) {
+            throw new OrderInvalidTransitionException(orderId, order.getStatus(), OrderStatus.SCHEDULED);
+        }
+
+        OffsetDateTime updatedAt = OffsetDateTime.now();
+        boolean addressUpdated = false;
+
+        if (newScheduledFor != null) {
+            order.setScheduledFor(newScheduledFor);
+        }
+        if (newDeliveryAddressJson != null) {
+            order.setDeliveryAddressJson(newDeliveryAddressJson);
+            order.setDeliveryLat(newDeliveryLat);
+            order.setDeliveryLng(newDeliveryLng);
+            addressUpdated = true;
+        }
+        if (newPhoneNumber != null) {
+            order.setDeliveryPhoneNumber(newPhoneNumber);
+            addressUpdated = true;
+        }
+        order.setUpdatedAt(updatedAt);
+
+        OrderEntity saved = orderRepository.saveAndFlush(order);
+
+        orderEventOutboxWriter.saveScheduledOrderUpdated(
+                saved,
+                newScheduledFor != null ? newScheduledFor.toString() : null,
+                newDeliveryAddressJson != null,
+                newPhoneNumber != null,
+                updatedAt
+        );
+
+        return saved;
     }
 
     @Transactional

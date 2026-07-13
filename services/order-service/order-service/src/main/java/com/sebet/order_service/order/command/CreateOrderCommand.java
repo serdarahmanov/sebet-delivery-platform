@@ -22,6 +22,7 @@ public record CreateOrderCommand(
         BigDecimal totalAmount,
         String currency,
         String deliveryAddressJson,
+        String phoneNumber,
         BigDecimal deliveryLat,
         BigDecimal deliveryLng,
         BigDecimal storeLat,

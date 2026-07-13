@@ -404,6 +404,7 @@ class OrderCreationServiceTest {
                 new BigDecimal("36000.00"),
                 "UZS",
                 "{\"street\":\"Amir Temur 25\",\"city\":\"Tashkent\"}",
+                null,
                 new BigDecimal("41.311100"),
                 new BigDecimal("69.279700"),
                 new BigDecimal("41.320100"),

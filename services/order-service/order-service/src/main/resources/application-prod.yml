@@ -25,6 +25,16 @@ spring:
 order-service:
   internal:
     secret: ${ORDER_SERVICE_INTERNAL_SECRET:}
+  scheduled-order:
+    min-lead-time-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_MIN_LEAD_TIME_MINUTES:60}
+    slot-interval-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_SLOT_INTERVAL_MINUTES:15}
+    delivery-window-duration-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_DELIVERY_WINDOW_DURATION_MINUTES:30}
+    modification-cutoff-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_MODIFICATION_CUTOFF_MINUTES:40}
+  store-service:
+    base-url: ${ORDER_SERVICE_STORE_SERVICE_BASE_URL}
+    fallback-open-time: ${ORDER_SERVICE_STORE_SERVICE_FALLBACK_OPEN_TIME:08:00}
+    fallback-close-time: ${ORDER_SERVICE_STORE_SERVICE_FALLBACK_CLOSE_TIME:19:00}
+    fallback-working-days: ${ORDER_SERVICE_STORE_SERVICE_FALLBACK_WORKING_DAYS:MON,TUE,WED,THU,FRI,SAT,SUN}
   kafka:
     checkout-events:
       topic: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_TOPIC:checkout-events}

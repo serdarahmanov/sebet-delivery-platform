@@ -264,7 +264,7 @@ class CustomerOrderQueryServiceIntegrationTest {
         ScheduledOrderDetailResponse result =
                 queryService.getScheduledOrderDetail("customer-1", created.order().getId().toString());
 
-        assertThat(result.scheduledFor()).isNotNull();
+        assertThat(result.scheduledWindowStart()).isNotNull();
         assertThat(result.canCancel()).isTrue();
         assertThat(result.items()).hasSize(2);
     }
@@ -315,6 +315,7 @@ class CustomerOrderQueryServiceIntegrationTest {
                 new BigDecimal("36000.00"),
                 "UZS",
                 "{\"street\":\"Amir Temur 25\",\"city\":\"Tashkent\"}",
+                null,
                 new BigDecimal("41.311100"),
                 new BigDecimal("69.279700"),
                 new BigDecimal("41.320100"),
@@ -362,6 +363,7 @@ class CustomerOrderQueryServiceIntegrationTest {
                 new BigDecimal("36000.00"),
                 "UZS",
                 "{\"street\":\"Amir Temur 25\",\"city\":\"Tashkent\"}",
+                null,
                 new BigDecimal("41.311100"),
                 new BigDecimal("69.279700"),
                 new BigDecimal("41.320100"),

@@ -26,6 +26,8 @@ create table orders (
     updated_at timestamp with time zone not null,
     delivered_at timestamp with time zone,
     cancelled_at timestamp with time zone,
+    delivery_phone_number varchar(30),
+    delivered_proof_image_url text,
     constraint chk_orders_amounts_non_negative check (
         subtotal_amount >= 0
         and item_discount_amount >= 0

@@ -99,12 +99,26 @@ Implemented:
   - after commit, accept path atomically deletes C8 via `respondAcceptRedisUpdateScript`; recoverable Redis failures fall back to `RESPOND_ACCEPT_HOT_VIEWS`
   - ACCEPT_WITH_MODIFICATIONS requires non-empty `itemDecisions`; 400 returned when empty
   - item decision validation: rejects duplicate productIds, unknown productIds, missing decisions for proposed items, `ACCEPT_PROPOSED_QUANTITY` on fully-out-of-stock items, `REQUEST_CUSTOM_QUANTITY` without `customQuantity` or with quantity exceeding available stock
+- `CustomerOrderLifecycleService.updateScheduledOrder` implements `PATCH /api/v1/orders/scheduled/{orderId}`:
+  - at least one of `scheduledWindowStart`, `newAddress`, or `phoneNumber` must be non-null; empty body returns 400
+  - 409 `MODIFICATION_WINDOW_CLOSED` when `scheduledFor ≤ now + modificationCutoffMinutes` (default 40 min, configurable)
+  - `scheduledWindowStart` validation: valid ISO-8601, at least `minLeadTimeMinutes` (default 60) in the future, differs from current by at least `slotIntervalMinutes` (default 15), aligned to 15-min slot boundary, and within store working hours on that day
+  - store working hours fetched via `StoreServiceClient` with 3 retries; on failure, falls back to env-variable defaults (08:00-19:00, all days)
+  - `newAddress` fields: `label` optional, `street`/`city`/`lat`/`lng` required when object is present
+  - after commit, `OrderScheduledUpdateRedisWriter` updates Cache 1c ZSET score (if `scheduledFor` changed) and evicts Cache 2 snapshot (if address or phone changed)
+  - emits `OrderScheduledUpdated` outbox event
+- `CustomerOrderLifecycleService.activateNow` implements `POST /api/v1/orders/scheduled/{orderId}/activate-now`:
+  - `SCHEDULED -> PENDING`; actor = USER, reason = CUSTOMER_REQUESTED_ASAP
+  - 409 `ORDER_INVALID_TRANSITION` if order is not `SCHEDULED`
+  - after commit, atomically moves Redis hot views from Cache 1c to Cache 1 and Cache 1b via the same Lua script used by internal activation
+- `delivery_phone_number` and `delivered_proof_image_url` columns added to the `orders` table (V1 migration, no separate migration since app not yet deployed)
+- `phoneNumber` propagated through checkout event (`DeliverySnapshot`) → `CreateOrderCommand` → `OrderEntity` → Cache 2 (`DeliveryAddress`) → all customer and store `DeliveryAddressDto` response fields
+- `StoreServiceClient`: `RestTemplate`-based HTTP client, `GET {baseUrl}/api/v1/stores/{storeId}/working-hours`, 3-retry loop, parses env-variable fallback on all failures
+- `OrderScheduledUpdateRedisWriter`: removes + re-adds the order in Cache 1c ZSET with the new score if `scheduledFor` changed; deletes Cache 2 snapshot (rebuild-on-next-read) if address or phone changed
 
 Pending:
 
 - promo service callback: `POST /api/v1/internal/orders/{orderId}/update-after-proposal` — applies recalculated totals and transitions `AWAITING_CUSTOMER_RESPONSE -> CONFIRMED`; marks proposal `APPLIED`
-- scheduled order update write path
-- delivery cancellation path
 
 ## Database
 
@@ -216,6 +230,8 @@ Implemented:
 - `VerificationCodeNotFoundException` maps to `404 VERIFICATION_CODE_NOT_FOUND`.
 - `IdempotencyKeyConflictException` maps to `409 IDEMPOTENCY_KEY_CONFLICT`.
 - `CacheInvalidationFailedException` maps to `503 CACHE_INVALIDATION_FAILED`.
+- `ScheduledOrderModificationWindowClosedException` maps to `409 MODIFICATION_WINDOW_CLOSED`.
+- `InvalidScheduledWindowException` maps to `400 INVALID_SCHEDULED_WINDOW`.
 
 Pending:
 
