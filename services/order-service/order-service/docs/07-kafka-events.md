@@ -81,14 +81,16 @@ Target flow:
 1. Consume the raw JSON value from `checkout-events`.
 2. Deserialize it as `IntegrationEvent<CheckoutConfirmedPayload>`.
 3. Validate the envelope and payload contract.
-4. Skip if `processed_events.event_id` already exists.
-5. Acquire `order:lock:{cartId}`.
-6. Map it to `CreateOrderCommand`.
-7. Persist order in PostgreSQL.
-8. Insert the checkout `eventId` into `processed_events` after successful order creation and Redis initialization.
-9. Insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction.
-10. Write Redis hot keys after commit.
-11. Release lock.
+4. Insert the checkout `eventId` into `processed_events` as `IN_PROGRESS` with a lease, or skip if it is already `COMPLETED`.
+5. If another live instance owns the `IN_PROGRESS` row, throw `ProcessedEventInProgressException` so Kafka retries with the dedicated in-progress retry backoff.
+6. Reclaim the `IN_PROGRESS` row if its lease expired.
+7. Acquire `order:lock:{cartId}`.
+8. Map it to `CreateOrderCommand`.
+9. Persist order in PostgreSQL.
+10. Insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction.
+11. Write Redis hot keys after commit.
+12. Mark the checkout `eventId` as `COMPLETED`.
+13. Release lock.
 
 Implemented pieces:
 
@@ -120,7 +122,7 @@ Currently implemented in the flow:
 - persist order, order items, and initial status history in PostgreSQL
 - insert `OrderCreated` or `OrderScheduled` into `outbox_event` in the same PostgreSQL transaction
 - insert specialized lifecycle and assignment events into `outbox_event` in the same PostgreSQL transaction
-- handle duplicate checkout events through `processed_events.event_id` and `orders.cart_id` idempotency, while recording the processed event only after Redis initialization succeeds
+- handle duplicate checkout events through leased `processed_events` reservations and `orders.cart_id` idempotency, while marking the event `COMPLETED` only after Redis initialization succeeds
 - initialize the Redis snapshot, status, timeline, and active/scheduled membership after commit
 
 ## Current Implementation Status
@@ -146,6 +148,7 @@ is resumed automatically.
 Checkout event retry and DLT handling are implemented with Spring Kafka container infrastructure:
 
 - failed listener processing is retried with configurable exponential backoff
+- `ProcessedEventInProgressException` uses a separate fixed retry window so duplicate deliveries wait long enough for the owning instance to complete or for the processed-event lease to expire
 - exhausted failures are published to the configured DLT topic with the original key
 - DLT records are routed to the same partition number as the source record when the DLT topic has enough partitions
 - deserialization is string-based and malformed checkout JSON is surfaced as listener failure so it can be routed through the error handler
@@ -170,7 +173,18 @@ order-service.kafka.checkout-events.retry.initial-interval-ms
 order-service.kafka.checkout-events.retry.multiplier
 order-service.kafka.checkout-events.retry.max-interval-ms
 order-service.kafka.checkout-events.retry.max-attempts
+order-service.kafka.checkout-events.in-progress-retry.interval-ms
+order-service.kafka.checkout-events.in-progress-retry.max-attempts
+order-service.kafka.checkout-events.processed-events.in-progress-lease
+order-service.kafka.checkout-events.processed-events.completed-retention
+order-service.kafka.checkout-events.processed-events.abandoned-in-progress-retention
+order-service.kafka.checkout-events.processed-events.cleanup-interval-ms
 ```
+
+`in-progress-retry.interval-ms * in-progress-retry.max-attempts` must be
+greater than or equal to `processed-events.in-progress-lease`. This keeps a
+duplicate delivery from reaching DLT while another instance may still legally
+own the `IN_PROGRESS` lease. The application validates this at startup.
 
 Driver-assignment projection listener settings are controlled by:
 
@@ -199,13 +213,19 @@ Direct Kafka producers for business events are intentionally not implemented.
 Produced order business events are written to `outbox_event` for Debezium
 publishing. The delivery-arrival consumer is not implemented yet.
 
-Concurrent checkout creation is guarded by `order:lock:{cartId}`. If another service instance already holds that lock, processing fails with a retryable exception so Spring Kafka can redeliver the record according to the configured retry policy. Duplicate checkout creation is still protected at the database level by the unique `orders.cart_id` index. `OrderCreationService` also returns the existing order when the cart id has already been processed.
+Concurrent checkout creation is guarded by `order:lock:{cartId}`. If another service instance already holds that lock, processing fails with a retryable exception so Spring Kafka can redeliver the record according to the configured retry policy. Duplicate checkout creation is still protected at the database level by the unique `orders.cart_id` index. `OrderCreationService` returns the existing order when the cart id has already been processed, including the race where another instance creates the order after this instance's initial lookup but before this instance flushes its insert.
+
+Processed-event ownership is stored durably in PostgreSQL. If an instance
+crashes after reserving an event as `IN_PROGRESS`, the row remains until
+`locked_until`; after that, a retry can reclaim and process it. If processing
+fails before completion, the handler releases its own `IN_PROGRESS` reservation
+so Kafka can retry without waiting for the lease.
 
 If a replay happens after a partial Redis failure, the cache write-through path is idempotent and rebuilds missing hot-view keys from the current database order state instead of replaying stale checkout payload data.
 
 The Redis lock owner value comes from `order-service.instance-id`. If it is not configured, the service uses `${spring.application.name}-${random.uuid}`, which gives each running replica a distinct owner value.
 
-The checkout handler is covered by unit tests for successful creation, processed-event duplicate handling, duplicate cart handling, validation failures, failure release, lock contention, and release failure. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding. The cache-eviction projection consumer is covered by unit tests for raw event deserialization, unsupported event skipping, general driver-event skipping, strategy dispatch for `OrderCacheEvictionRequested`, Redis failure pause behavior, and acknowledgment contract.
+The checkout handler is covered by unit tests for successful creation, processed-event duplicate handling, duplicate cart handling, validation failures, failure release, lock contention, and release failure. Processed-event reservation, completion, release, and expired-lease reclaim are covered by PostgreSQL integration tests. The Kafka listener is covered by integration tests that start real Kafka brokers, PostgreSQL databases, and Redis with Testcontainers. Current coverage includes successful order creation, retryable failures to DLT, non-retryable failures to DLT without retry, malformed JSON failures to DLT, partition/key preservation, DLT publish failure behavior, and retry property binding. The cache-eviction projection consumer is covered by unit tests for raw event deserialization, unsupported event skipping, general driver-event skipping, strategy dispatch for `OrderCacheEvictionRequested`, Redis failure pause behavior, and acknowledgment contract.
 
 ## Design Rule
 

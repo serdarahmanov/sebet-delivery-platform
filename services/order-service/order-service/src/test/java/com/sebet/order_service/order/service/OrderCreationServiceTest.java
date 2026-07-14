@@ -41,6 +41,12 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
@@ -251,6 +257,52 @@ class OrderCreationServiceTest {
         assertThat(outboxEventRepository.findAll())
                 .extracting(OutboxEventEntity::getEventType)
                 .containsExactly("OrderCreated");
+    }
+
+    @Test
+    void concurrentDuplicateCartIdCallsCreateOneOrder() throws Exception {
+        int requestCount = 8;
+        CreateOrderCommand command = command("cart-concurrent-duplicate-1", ScheduleType.ASAP, null);
+        ExecutorService executor = Executors.newFixedThreadPool(requestCount);
+        CyclicBarrier barrier = new CyclicBarrier(requestCount);
+
+        try {
+            List<Future<CreateOrderResult>> futures = IntStream.range(0, requestCount)
+                    .mapToObj(ignored -> executor.submit(() -> {
+                        barrier.await(10, TimeUnit.SECONDS);
+                        return orderCreationService.createOrder(command);
+                    }))
+                    .toList();
+
+            List<CreateOrderResult> results = futures.stream()
+                    .map(future -> {
+                        try {
+                            return future.get(20, TimeUnit.SECONDS);
+                        } catch (Exception exception) {
+                            throw new AssertionError("Concurrent order creation failed", exception);
+                        }
+                    })
+                    .toList();
+
+            OrderEntity savedOrder = orderRepository.findByCartId("cart-concurrent-duplicate-1").orElseThrow();
+            assertThat(results)
+                    .extracting(result -> result.order().getId())
+                    .containsOnly(savedOrder.getId());
+            assertThat(results)
+                    .extracting(CreateOrderResult::createdNewOrder)
+                    .contains(true);
+            assertThat(orderRepository.findAll()).hasSize(1);
+            assertThat(orderItemRepository.findByOrderIdOrderByLineNumberAsc(savedOrder.getId())).hasSize(2);
+            assertThat(orderStatusHistoryRepository.findByOrderIdOrderByCreatedAtAsc(savedOrder.getId())).hasSize(1);
+            assertThat(outboxEventRepository.findAll())
+                    .extracting(OutboxEventEntity::getEventType)
+                    .containsExactly("OrderCreated");
+            assertThat(orderRedisRepository.findById(savedOrder.getId().toString())).isPresent();
+            assertThat(orderStatusRedisRepository.findById(savedOrder.getId().toString()).map(OrderStatusRedisRepository.Entry::status))
+                    .hasValue(OrderStatus.PENDING.name());
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

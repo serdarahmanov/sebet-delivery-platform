@@ -12,6 +12,7 @@ The project currently has order-service tests covering:
 - Order creation service integration tests.
 - Checkout event mapper unit tests.
 - Checkout event handler lock, validation, and idempotency unit tests.
+- Checkout processed-event reservation and expired-lease reclaim integration tests.
 - Checkout Kafka listener and retry/DLT integration tests against real brokers.
 - Cache-eviction projection consumer unit tests for deliberate C2 eviction events, strategy registry dispatch, unknown cache name handling, and Redis failure pause behavior.
 - Redis recovery scheduler unit tests for pause detection, recovery resume, connection failure, and timeout handling.
@@ -71,6 +72,7 @@ Compile without running tests:
 - checkout event mapping
 - checkout event consumer delegation
 - checkout event handler Redis lock, validation, and idempotency behavior
+- checkout processed-event insert-first reservation, `IN_PROGRESS` conflict, completion, release, and expired-lease reclaim behavior
 - checkout Kafka listener integration
 - durable order repository behavior
 - optimistic locking and per-order product uniqueness
@@ -94,6 +96,8 @@ Compile without running tests:
 - `OrderCacheEvictionRequested` outbox event payload writing
 - C2 eviction coordinator direct-delete, Redis-failure fallback-event, fallback-failure, non-Redis failure propagation, and generic strategy routing behavior
 - idempotent command reservation, `IN_PROGRESS` conflict, completed replay, request-conflict, expired-lease reclaim, and failure cleanup behavior
+- concurrent checkout order creation for the same `cartId` against PostgreSQL, verifying the unique `orders.cart_id` constraint resolves to one order
+- checkout processed-event retry-window validation, verifying the dedicated `IN_PROGRESS` retry window covers the processed-event lease
 - `DriverAssignmentDeclined` outbox event payload writing
 - `DriverAssigned`, `DriverReplaced`, and `DriverUnassigned` outbox event payload writing
 - driver ownership verification (`DRIVER_NOT_ASSIGNED`)
@@ -134,6 +138,7 @@ Implemented integration coverage:
 - initial order creation for ASAP and scheduled orders
 - duplicate cart id handling in order creation
 - checkout event handler mapping, lock handling, validation, processed-event idempotency, and duplicate-cart behavior
+- checkout processed-event reservation, completion, release, and expired-lease reclaim against real PostgreSQL transactions
 - checkout event handler Redis hot-view initialization and recovery behavior from current database state
 - Kafka listener integration against a real broker
 - Kafka retry/DLT behavior

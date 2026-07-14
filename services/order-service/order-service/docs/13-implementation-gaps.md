@@ -14,6 +14,7 @@ Implemented:
 
 - `OrderCreationService` creates durable orders from internal checkout commands.
 - Redis hot-view initialization for created orders from current database state.
+- Duplicate checkout creation is protected by `orders.cart_id`; if a concurrent insert loses the unique-index race, `OrderCreationService` loads the existing order and returns it as an idempotent success.
 - `DRIVER_ASSIGNED` removed from `OrderStatus` enum; driver assignment is modelled as `driverId` / `driverAssignedAt` metadata fields on the order.
 - `CustomerOrderQueryService` implements all 10 customer-facing GET methods: history feed, active orders list, active order detail, scheduled detail, cancelled detail, smart router, status, tracking, verification code, and proposed changes.
 - Customer single-order read ownership verification returns 404 for both not-found and wrong-user responses.
@@ -30,6 +31,7 @@ Implemented:
 - Store `OUT_OF_STOCK` rejection validation rejects duplicate product ids and null list elements.
 - Store rejection and cancellation metadata is persisted into `order_status_history.metadata_json`.
 - Store `/cancel` requires `Idempotency-Key`; the key is reserved as `IN_PROGRESS` before business execution, the owning request stores the completed response after the order update and lifecycle outbox event, and idempotent replay reruns Redis cleanup.
+- REST idempotent command cleanup runs through `scheduled/idempotency/IdempotentCommandCleanupScheduler`, deleting old `COMPLETED` rows and abandoned expired `IN_PROGRESS` rows based on environment-backed retention settings.
 - `OrderLifecycleService` implements driver lifecycle transitions:
   - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY` through `POST /api/v1/driver/orders/{orderId}/pickup`
   - `OUT_FOR_DELIVERY -> ARRIVED` through `POST /api/v1/driver/orders/{orderId}/arrive`
@@ -129,8 +131,11 @@ Implemented:
 - Flyway migration `V1__create_order_tables.sql` covering the base order schema, outbox event table, processed-events idempotency, enum rename, and the extended order/item schema
 - Flyway migration `V3__create_idempotent_commands.sql` covering REST write idempotency records
 - Flyway migration `V8__strengthen_idempotent_commands.sql` covering idempotent command reservation status, lease ownership, completion timestamps, and cleanup/reclaim indexing
+- Flyway migration `V9__strengthen_processed_events.sql` covering checkout event processing status, lease ownership, completion timestamps, and cleanup/reclaim indexing
 - unique `cart_id` idempotency constraint
+- `processed_events` insert-first `IN_PROGRESS` reservation, `COMPLETED` dedup, and expired-lease reclaim support
 - unique `(action, idempotency_key)` idempotent command constraint
+- `(status, locked_until)` processed-event cleanup and expired-lease reclaim index
 - `(status, locked_until)` idempotent command cleanup and expired-lease reclaim index
 - optimistic lock `orders.version` column
 - unique `(order_id, product_id)` order item constraint
@@ -154,15 +159,17 @@ Implemented:
 - checkout confirmed envelope and payload DTOs
 - checkout event to order creation command mapper
 - raw-string checkout event consumer
-- checkout event handler validation and processed-event idempotency
+- checkout event handler validation and lease-based processed-event idempotency
 - real-broker Kafka listener integration tests
 - checkout event retry and DLT handling
+- checkout `ProcessedEventInProgressException` uses a dedicated retry window that must cover the processed-event lease; invalid shorter configurations fail startup
 - checkout DLT topic startup validation
 - Kafka retry/DLT integration coverage for retryable, non-retryable, malformed payload, partition/key preservation, and DLT publish failure paths
 - Redis lock integration for checkout event handling
 - Redis hot-view initialization for created orders from current database state
 - order-created, lifecycle, and driver-assignment event outbox writes for Debezium publishing
 - cache-eviction projection consumer for deliberate C2 Redis eviction requests from `order-events`
+- processed checkout event cleanup runs through `scheduled/checkout/ProcessedEventCleanupScheduler`, deleting old `COMPLETED` rows and abandoned expired `IN_PROGRESS` rows based on environment-backed retention settings
 
 Pending:
 
@@ -175,6 +182,11 @@ Not in scope for this service:
   `docs/14-debezium-outbox.md` for connector config and the deployment decision.
 
 ## Background Jobs
+
+Implemented:
+
+- REST idempotent command cleanup scheduler (`scheduled/idempotency/IdempotentCommandCleanupScheduler`)
+- checkout processed-event cleanup scheduler (`scheduled/checkout/ProcessedEventCleanupScheduler`)
 
 Pending:
 

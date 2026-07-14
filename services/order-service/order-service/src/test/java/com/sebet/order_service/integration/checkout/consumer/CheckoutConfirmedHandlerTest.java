@@ -8,6 +8,7 @@ import com.sebet.order_service.integration.checkout.event.IntegrationEvent;
 import com.sebet.order_service.integration.checkout.event.MoneyBreakdown;
 import com.sebet.order_service.integration.checkout.mapper.CheckoutConfirmedEventMapper;
 import com.sebet.order_service.integration.checkout.service.ProcessedEventWriter;
+import com.sebet.order_service.integration.checkout.service.ProcessedEventWriter.ProcessedEventReservation;
 import com.sebet.order_service.order.command.CreateOrderCommand;
 import com.sebet.order_service.order.command.CreateOrderResult;
 import com.sebet.order_service.order.service.OrderCreationService;
@@ -47,13 +48,15 @@ class CheckoutConfirmedHandlerTest {
             INSTANCE_ID
     );
 
+    private static final String OWNER_TOKEN = "order-service-test-instance:reservation";
+
     @Test
     void createsOrderWhenLockIsAcquiredAndRecordsProcessedEvent() {
         IntegrationEvent<CheckoutConfirmedPayload> event = CheckoutEventTestFactory.checkoutEvent("cart-1");
         CreateOrderCommand command = mock(CreateOrderCommand.class);
         OrderEntity order = order("cart-1");
 
-        when(processedEventWriter.isAlreadyProcessed(event.eventId())).thenReturn(false);
+        when(processedEventWriter.reserve(any(), any())).thenReturn(new ProcessedEventReservation(true, OWNER_TOKEN));
         when(orderLockRedisRepository.tryAcquire("cart-1", INSTANCE_ID)).thenReturn(true);
         when(mapper.toCreateOrderCommand(event)).thenReturn(command);
         when(orderCreationService.createOrder(command)).thenReturn(new CreateOrderResult(order, true));
@@ -64,19 +67,31 @@ class CheckoutConfirmedHandlerTest {
         verify(orderLockRedisRepository).tryAcquire("cart-1", INSTANCE_ID);
         verify(mapper).toCreateOrderCommand(event);
         verify(orderCreationService).createOrder(command);
-        verify(processedEventWriter).markProcessed(event);
+        verify(processedEventWriter).markCompleted(event.eventId(), OWNER_TOKEN);
         verify(orderLockRedisRepository).release("cart-1", INSTANCE_ID);
     }
 
     @Test
     void skipsAlreadyProcessedEventBeforeLocking() {
         IntegrationEvent<CheckoutConfirmedPayload> event = CheckoutEventTestFactory.checkoutEvent("cart-duplicate-event");
-        when(processedEventWriter.isAlreadyProcessed(event.eventId())).thenReturn(true);
+        when(processedEventWriter.reserve(any(), any())).thenReturn(new ProcessedEventReservation(false, null));
 
         handler.handle(event);
 
-        verify(processedEventWriter).isAlreadyProcessed(event.eventId());
+        verify(processedEventWriter).reserve(any(), any());
         verifyNoMoreInteractions(processedEventWriter);
+        verifyNoMoreInteractions(orderLockRedisRepository, mapper, orderCreationService);
+    }
+
+    @Test
+    void propagatesInProgressReservationBeforeLocking() {
+        IntegrationEvent<CheckoutConfirmedPayload> event = CheckoutEventTestFactory.checkoutEvent("cart-in-progress");
+        ProcessedEventInProgressException failure = new ProcessedEventInProgressException(event.eventId());
+        doThrow(failure).when(processedEventWriter).reserve(any(), any());
+
+        assertThatThrownBy(() -> handler.handle(event)).isSameAs(failure);
+
+        verify(processedEventWriter).reserve(any(), any());
         verifyNoMoreInteractions(orderLockRedisRepository, mapper, orderCreationService);
     }
 
@@ -86,7 +101,7 @@ class CheckoutConfirmedHandlerTest {
         CreateOrderCommand command = mock(CreateOrderCommand.class);
         OrderEntity order = order("cart-duplicate");
 
-        when(processedEventWriter.isAlreadyProcessed(event.eventId())).thenReturn(false);
+        when(processedEventWriter.reserve(any(), any())).thenReturn(new ProcessedEventReservation(true, OWNER_TOKEN));
         when(orderLockRedisRepository.tryAcquire("cart-duplicate", INSTANCE_ID)).thenReturn(true);
         when(mapper.toCreateOrderCommand(event)).thenReturn(command);
         when(orderCreationService.createOrder(command)).thenReturn(new CreateOrderResult(order, false));
@@ -94,7 +109,7 @@ class CheckoutConfirmedHandlerTest {
 
         handler.handle(event);
 
-        verify(processedEventWriter).markProcessed(event);
+        verify(processedEventWriter).markCompleted(event.eventId(), OWNER_TOKEN);
         verify(orderLockRedisRepository).release("cart-duplicate", INSTANCE_ID);
     }
 
@@ -104,7 +119,7 @@ class CheckoutConfirmedHandlerTest {
         CreateOrderCommand command = mock(CreateOrderCommand.class);
         IllegalStateException failure = new IllegalStateException("database unavailable");
 
-        when(processedEventWriter.isAlreadyProcessed(event.eventId())).thenReturn(false);
+        when(processedEventWriter.reserve(any(), any())).thenReturn(new ProcessedEventReservation(true, OWNER_TOKEN));
         when(orderLockRedisRepository.tryAcquire("cart-fails", INSTANCE_ID)).thenReturn(true);
         when(mapper.toCreateOrderCommand(event)).thenReturn(command);
         when(orderCreationService.createOrder(command)).thenThrow(failure);
@@ -113,14 +128,15 @@ class CheckoutConfirmedHandlerTest {
         assertThatThrownBy(() -> handler.handle(event)).isSameAs(failure);
 
         verify(orderLockRedisRepository).release("cart-fails", INSTANCE_ID);
-        verify(processedEventWriter, never()).markProcessed(any());
+        verify(processedEventWriter).releaseInProgress(event.eventId(), OWNER_TOKEN);
+        verify(processedEventWriter, never()).markCompleted(any(), any());
     }
 
     @Test
     void throwsRetryableExceptionWhenLockIsUnavailable() {
         IntegrationEvent<CheckoutConfirmedPayload> event = CheckoutEventTestFactory.checkoutEvent("cart-locked");
 
-        when(processedEventWriter.isAlreadyProcessed(event.eventId())).thenReturn(false);
+        when(processedEventWriter.reserve(any(), any())).thenReturn(new ProcessedEventReservation(true, OWNER_TOKEN));
         when(orderLockRedisRepository.tryAcquire("cart-locked", INSTANCE_ID)).thenReturn(false);
 
         assertThatThrownBy(() -> handler.handle(event))
@@ -128,6 +144,7 @@ class CheckoutConfirmedHandlerTest {
                 .hasMessageContaining("cart-locked");
 
         verify(orderLockRedisRepository).tryAcquire("cart-locked", INSTANCE_ID);
+        verify(processedEventWriter).releaseInProgress(event.eventId(), OWNER_TOKEN);
         verify(orderLockRedisRepository, never()).release(any(), any());
         verifyNoMoreInteractions(mapper, orderCreationService);
     }
@@ -138,7 +155,7 @@ class CheckoutConfirmedHandlerTest {
         CreateOrderCommand command = mock(CreateOrderCommand.class);
         OrderEntity order = order("cart-release-false");
 
-        when(processedEventWriter.isAlreadyProcessed(event.eventId())).thenReturn(false);
+        when(processedEventWriter.reserve(any(), any())).thenReturn(new ProcessedEventReservation(true, OWNER_TOKEN));
         when(orderLockRedisRepository.tryAcquire("cart-release-false", INSTANCE_ID)).thenReturn(true);
         when(mapper.toCreateOrderCommand(event)).thenReturn(command);
         when(orderCreationService.createOrder(command)).thenReturn(new CreateOrderResult(order, true));
@@ -147,27 +164,28 @@ class CheckoutConfirmedHandlerTest {
         assertThatCode(() -> handler.handle(event)).doesNotThrowAnyException();
 
         verify(orderLockRedisRepository).release("cart-release-false", INSTANCE_ID);
-        verify(processedEventWriter).markProcessed(event);
+        verify(processedEventWriter).markCompleted(event.eventId(), OWNER_TOKEN);
     }
 
     @Test
-    void propagatesProcessedEventPersistenceFailureAfterRedisInitialization() {
+    void propagatesProcessedEventCompletionFailureAfterRedisInitialization() {
         IntegrationEvent<CheckoutConfirmedPayload> event = CheckoutEventTestFactory.checkoutEvent("cart-processed-write-fails");
         CreateOrderCommand command = mock(CreateOrderCommand.class);
         OrderEntity order = order("cart-processed-write-fails");
         IllegalStateException failure = new IllegalStateException("processed_events insert failed");
 
-        when(processedEventWriter.isAlreadyProcessed(event.eventId())).thenReturn(false);
+        when(processedEventWriter.reserve(any(), any())).thenReturn(new ProcessedEventReservation(true, OWNER_TOKEN));
         when(orderLockRedisRepository.tryAcquire("cart-processed-write-fails", INSTANCE_ID)).thenReturn(true);
         when(mapper.toCreateOrderCommand(event)).thenReturn(command);
         when(orderCreationService.createOrder(command)).thenReturn(new CreateOrderResult(order, true));
-        doThrow(failure).when(processedEventWriter).markProcessed(event);
+        doThrow(failure).when(processedEventWriter).markCompleted(event.eventId(), OWNER_TOKEN);
         when(orderLockRedisRepository.release("cart-processed-write-fails", INSTANCE_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> handler.handle(event)).isSameAs(failure);
 
         verify(orderCreationService).createOrder(command);
-        verify(processedEventWriter).markProcessed(event);
+        verify(processedEventWriter).markCompleted(event.eventId(), OWNER_TOKEN);
+        verify(processedEventWriter).releaseInProgress(event.eventId(), OWNER_TOKEN);
         verify(orderLockRedisRepository).release("cart-processed-write-fails", INSTANCE_ID);
     }
 

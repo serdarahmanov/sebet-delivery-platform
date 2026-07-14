@@ -373,6 +373,8 @@ class OrderPersistenceRepositoryTest {
         assertThat(saved.getEventType()).isEqualTo("CheckoutConfirmed");
         assertThat(saved.getProcessedAt()).isNotNull();
         assertThat(saved.getOccurredAt()).isEqualTo(occurredAt);
+        assertThat(saved.getStatus()).isEqualTo("COMPLETED");
+        assertThat(saved.getCompletedAt()).isNotNull();
 
         assertThatThrownBy(() -> jdbcTemplate.update("""
                         insert into processed_events (event_id, event_type, occurred_at)
@@ -405,7 +407,8 @@ class OrderPersistenceRepositoryTest {
 
         assertThat(indexNames).contains(
                 "processed_events_pkey",
-                "idx_processed_events_event_type_processed_at"
+                "idx_processed_events_event_type_processed_at",
+                "idx_processed_events_status_locked_until"
         );
     }
 

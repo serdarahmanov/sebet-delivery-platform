@@ -30,7 +30,7 @@ order-service:
     base-url: http://localhost:8081
     fallback-open-time: "08:00"
     fallback-close-time: "19:00"
-    fallback-working-days: "MON,TUE,WED,THU,FRI,SAT,SUN"
+    fallback-working-days: "MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY,SATURDAY,SUNDAY"
   kafka:
     checkout-events:
       topic: checkout-events
@@ -39,10 +39,18 @@ order-service:
       dlt-topic: checkout-events.DLT
       validate-topics: false
       retry:
-        initial-interval-ms: 1000
-        multiplier: 2.0
-        max-interval-ms: 10000
-        max-attempts: 3
+        initial-interval-ms: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_RETRY_INITIAL_INTERVAL_MS:1000}
+        multiplier: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_RETRY_MULTIPLIER:2.0}
+        max-interval-ms: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_RETRY_MAX_INTERVAL_MS:10000}
+        max-attempts: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_RETRY_MAX_ATTEMPTS:3}
+      processed-events:
+        in-progress-lease: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_IN_PROGRESS_LEASE:PT30S}
+        completed-retention: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_COMPLETED_RETENTION:PT168H}
+        abandoned-in-progress-retention: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_ABANDONED_IN_PROGRESS_RETENTION:PT1H}
+        cleanup-interval-ms: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_CLEANUP_INTERVAL_MS:600000}
+      in-progress-retry:
+        interval-ms: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_IN_PROGRESS_RETRY_INTERVAL_MS:5000}
+        max-attempts: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_IN_PROGRESS_RETRY_MAX_ATTEMPTS:12}
     order-events:
       topic: order-events
       group-id: order-service-driver-assignment-projection

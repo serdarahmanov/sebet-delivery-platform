@@ -35,10 +35,26 @@ public class ProcessedEventEntity {
 
     private OffsetDateTime occurredAt;
 
+    @Column(nullable = false, length = 30)
+    private String status;
+
+    @Column(length = 150)
+    private String lockedBy;
+
+    private OffsetDateTime lockedUntil;
+
+    private OffsetDateTime completedAt;
+
     @PrePersist
     void prePersist() {
         if (processedAt == null) {
             processedAt = OffsetDateTime.now();
+        }
+        if (status == null) {
+            status = "COMPLETED";
+        }
+        if ("COMPLETED".equals(status) && completedAt == null) {
+            completedAt = processedAt;
         }
     }
 }

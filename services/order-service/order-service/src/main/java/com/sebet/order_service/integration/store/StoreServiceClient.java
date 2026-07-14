@@ -38,7 +38,7 @@ public class StoreServiceClient {
             @Value("${order-service.store-service.base-url}") String baseUrl,
             @Value("${order-service.store-service.fallback-open-time:08:00}") String fallbackOpenTime,
             @Value("${order-service.store-service.fallback-close-time:19:00}") String fallbackCloseTime,
-            @Value("${order-service.store-service.fallback-working-days:MON,TUE,WED,THU,FRI,SAT,SUN}") String fallbackWorkingDays
+            @Value("${order-service.store-service.fallback-working-days:MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY,SATURDAY,SUNDAY}") String fallbackWorkingDays
     ) {
         this.restTemplate = restTemplate;
         this.baseUrl = baseUrl;

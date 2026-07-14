@@ -20,6 +20,7 @@ Implemented:
 - Flyway migration `V3__create_idempotent_commands.sql` for REST write idempotency.
 - Flyway migration `V4__create_order_proposals_table.sql` for durable storage of store-proposed item changes.
 - Flyway migration `V8__strengthen_idempotent_commands.sql` for idempotent command status, lease ownership, completion timestamps, and cleanup/reclaim indexes.
+- Flyway migration `V9__strengthen_processed_events.sql` for checkout event processing status, lease ownership, completion timestamps, and cleanup/reclaim indexes.
 - JSONB mapping for the delivery address snapshot and status metadata.
 - Unique `orders.cart_id` idempotency constraint.
 - Unique per-order `order_items.line_number` constraint.
@@ -85,7 +86,7 @@ The current durable schema stores:
 - `order_items`: durable item snapshots with product, quantity, unit, pricing, discount, image URL, and line number.
 - `order_status_history`: append-style status transition records.
 - `outbox_event`: append-only order business events for Debezium publication.
-- `processed_events`: consumed integration event ids already applied by order-service.
+- `processed_events`: checkout event processing ledger with `IN_PROGRESS` reservations and `COMPLETED` dedup records.
 - `idempotent_commands`: REST write idempotency reservations and completed responses keyed by action and `Idempotency-Key`.
 
 Important constraints and indexes:
@@ -104,6 +105,7 @@ Important constraints and indexes:
 - outbox indexes on `(aggregate_type, aggregate_id)`, `(event_type, created_at)`, and `created_at`.
 - `processed_events.event_id` primary key prevents the same checkout event from being applied twice.
 - `processed_events(event_type, processed_at)` supports operational review of processed integration events.
+- `processed_events(status, locked_until)` supports cleanup and expired `IN_PROGRESS` lease recovery.
 - `idempotent_commands.id` primary key.
 - `idempotent_commands(action, idempotency_key)` unique index allows only one reservation or completed response for the same action/key.
 - `idempotent_commands(order_id, action, created_at desc)` supports operational lookup by order/action.
@@ -126,6 +128,14 @@ New checkout orders now populate the hot-view keys after the database transactio
 - `user:active_orders:{userId}` for ASAP orders
 - `store:active_orders:{storeId}` for ASAP orders
 - `store:scheduled_orders:{storeId}` for scheduled orders
+
+Checkout event consumption first inserts the event id into `processed_events`
+as `IN_PROGRESS` with a lease. If the event is already `COMPLETED`, the
+handler returns without doing work. If another live instance owns an
+`IN_PROGRESS` row, Spring Kafka retries with the dedicated in-progress retry
+backoff. If the lease has expired, another instance can reclaim the row and
+process the event. The owning instance marks the row `COMPLETED` only after
+order creation and Redis hot-view initialization succeed.
 
 Store read paths fall back to PostgreSQL if store membership keys point to
 missing or unusable per-order cache data.
@@ -169,6 +179,21 @@ Cleanup defaults are configured through environment-backed application
 properties: `ORDER_SERVICE_IDEMPOTENCY_COMPLETED_RETENTION`,
 `ORDER_SERVICE_IDEMPOTENCY_ABANDONED_IN_PROGRESS_RETENTION`, and
 `ORDER_SERVICE_IDEMPOTENCY_CLEANUP_INTERVAL_MS`.
+
+Processed checkout event leases default to 30 seconds
+(`ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_IN_PROGRESS_LEASE=PT30S`).
+Completed processed-event rows are retained for seven days by default,
+abandoned `IN_PROGRESS` rows are retained for one hour after their lock expires,
+and cleanup runs every ten minutes. These defaults are configured through
+`ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_COMPLETED_RETENTION`,
+`ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_ABANDONED_IN_PROGRESS_RETENTION`,
+and `ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_CLEANUP_INTERVAL_MS`.
+The dedicated retry window for `ProcessedEventInProgressException` must be at
+least as long as the processed-event lease. With defaults,
+`ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_IN_PROGRESS_RETRY_INTERVAL_MS=5000` and
+`ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_IN_PROGRESS_RETRY_MAX_ATTEMPTS=12` give a
+60 second retry window for the 30 second lease; invalid shorter combinations
+fail application startup.
 
 JPA Open Session in View is disabled. Service methods should load and map all
 data needed by REST responses inside explicit transactional boundaries.

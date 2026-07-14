@@ -54,12 +54,52 @@ Expected categories:
 - Redis host/port/password
 - optional service instance id for Redis checkout-lock ownership
 - internal API shared secret (`ORDER_SERVICE_INTERNAL_SECRET`) for `X-Internal-Key` validation
+- store-service base URL and fallback working hours
 - Kafka bootstrap servers
 - consumed topic names
 - produced topic names
 - checkout retry and DLT settings
+- checkout processed-event lease, retry, and cleanup settings
+- REST idempotent command cleanup settings
 - order-events projection topic and DLT settings
 - Debezium connector database host/user/password/slot/publication settings
+
+Checkout processed-event ownership settings:
+
+```text
+ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_IN_PROGRESS_RETRY_INTERVAL_MS
+ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_IN_PROGRESS_RETRY_MAX_ATTEMPTS
+ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_IN_PROGRESS_LEASE
+ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_COMPLETED_RETENTION
+ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_ABANDONED_IN_PROGRESS_RETENTION
+ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_CLEANUP_INTERVAL_MS
+```
+
+The in-progress retry window must be at least the processed-event lease:
+`IN_PROGRESS_RETRY_INTERVAL_MS * IN_PROGRESS_RETRY_MAX_ATTEMPTS >=
+PROCESSED_EVENTS_IN_PROGRESS_LEASE`. The service fails startup if this is not
+true.
+
+REST idempotent command cleanup settings:
+
+```text
+ORDER_SERVICE_IDEMPOTENCY_COMPLETED_RETENTION
+ORDER_SERVICE_IDEMPOTENCY_ABANDONED_IN_PROGRESS_RETENTION
+ORDER_SERVICE_IDEMPOTENCY_CLEANUP_INTERVAL_MS
+```
+
+Store-service fallback settings:
+
+```text
+ORDER_SERVICE_STORE_SERVICE_BASE_URL
+ORDER_SERVICE_STORE_SERVICE_FALLBACK_OPEN_TIME
+ORDER_SERVICE_STORE_SERVICE_FALLBACK_CLOSE_TIME
+ORDER_SERVICE_STORE_SERVICE_FALLBACK_WORKING_DAYS
+```
+
+`ORDER_SERVICE_STORE_SERVICE_FALLBACK_WORKING_DAYS` must use Java
+`DayOfWeek` names such as `MONDAY,TUESDAY,WEDNESDAY`, not short names like
+`MON,TUE,WED`.
 
 ## Debezium Outbox Connector
 

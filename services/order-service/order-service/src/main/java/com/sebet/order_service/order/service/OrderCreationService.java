@@ -17,8 +17,10 @@ import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ScheduleType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -40,15 +42,41 @@ public class OrderCreationService {
     private final OrderCreationRedisWriter orderCreationRedisWriter;
     private final OrderEventOutboxWriter orderEventOutboxWriter;
     private final ObjectMapper objectMapper;
+    private final PlatformTransactionManager transactionManager;
 
-    @Transactional
     public CreateOrderResult createOrder(CreateOrderCommand command) {
+        try {
+            return transactionTemplate().execute(status -> createOrderInTransaction(command));
+        } catch (DataIntegrityViolationException exception) {
+            if (!isCartIdUniqueViolation(exception)) {
+                throw exception;
+            }
+            return loadExistingAfterDuplicateCartId(command, exception);
+        }
+    }
+
+    private CreateOrderResult createOrderInTransaction(CreateOrderCommand command) {
         return orderRepository.findByCartId(command.cartId())
                 .map(existingOrder -> {
                     registerRedisInitialization(existingOrder);
                     return new CreateOrderResult(existingOrder, false);
                 })
                 .orElseGet(() -> createNewOrder(command));
+    }
+
+    private CreateOrderResult loadExistingAfterDuplicateCartId(
+            CreateOrderCommand command,
+            DataIntegrityViolationException duplicateCartId
+    ) {
+        return transactionTemplate().execute(status -> {
+            OrderEntity existingOrder = orderRepository.findByCartId(command.cartId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Order exists for cartId but could not be loaded: " + command.cartId(),
+                            duplicateCartId
+                    ));
+            registerRedisInitialization(existingOrder);
+            return new CreateOrderResult(existingOrder, false);
+        });
     }
 
     private CreateOrderResult createNewOrder(CreateOrderCommand command) {
@@ -94,6 +122,7 @@ public class OrderCreationService {
                 .build());
 
         orderEventOutboxWriter.saveOrderCreated(order);
+        orderRepository.flush();
         registerRedisInitialization(order);
         return new CreateOrderResult(order, true);
     }
@@ -139,6 +168,22 @@ public class OrderCreationService {
             return OrderStatus.SCHEDULED;
         }
         return OrderStatus.PENDING;
+    }
+
+    private boolean isCartIdUniqueViolation(DataIntegrityViolationException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.contains("idx_orders_cart_id")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private TransactionTemplate transactionTemplate() {
+        return new TransactionTemplate(transactionManager);
     }
 
     private List<OrderItemEntity> toOrderItems(

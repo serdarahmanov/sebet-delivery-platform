@@ -10,6 +10,7 @@ import com.sebet.order_service.integration.checkout.mapper.CheckoutConfirmedEven
 import com.sebet.order_service.order.command.CreateOrderCommand;
 import com.sebet.order_service.order.command.CreateOrderResult;
 import com.sebet.order_service.integration.checkout.service.ProcessedEventWriter;
+import com.sebet.order_service.integration.checkout.service.ProcessedEventWriter.ProcessedEventReservation;
 import com.sebet.order_service.order.service.OrderCreationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -49,14 +51,20 @@ public class CheckoutConfirmedHandler {
 
     public void handle(IntegrationEvent<CheckoutConfirmedPayload> event) {
         validate(event);
-        if (processedEventWriter.isAlreadyProcessed(event.eventId())) {
-            log.info("Ignoring already processed checkout event eventId={} cartId={}",
-                    event.eventId(), event.data().cartId());
+        String ownerToken = ownerToken();
+        ProcessedEventReservation reservation = processedEventWriter.reserve(event, ownerToken);
+        if (!reservation.shouldProcess()) {
+            log.info(
+                    "Ignoring already completed checkout event eventId={} cartId={}",
+                    event.eventId(),
+                    event.data().cartId()
+            );
             return;
         }
 
         String cartId = event.data().cartId();
         if (!orderLockRedisRepository.tryAcquire(cartId, instanceId)) {
+            processedEventWriter.releaseInProgress(event.eventId(), reservation.ownerToken());
             throw new CheckoutOrderLockUnavailableException(cartId);
         }
 
@@ -70,18 +78,10 @@ public class CheckoutConfirmedHandler {
                 log.info("Created order id={} from checkout cartId={}", result.order().getId(), cartId);
             }
 
-            try {
-                processedEventWriter.markProcessed(event);
-            } catch (RuntimeException exception) {
-                log.error(
-                        "Failed to record processed checkout event after order creation and Redis initialization; " +
-                                "Kafka should redeliver cartId={} eventId={}",
-                        cartId,
-                        event.eventId(),
-                        exception
-                );
-                throw exception;
-            }
+            processedEventWriter.markCompleted(event.eventId(), reservation.ownerToken());
+        } catch (RuntimeException exception) {
+            processedEventWriter.releaseInProgress(event.eventId(), reservation.ownerToken());
+            throw exception;
         } finally {
             boolean released = orderLockRedisRepository.release(cartId, instanceId);
             if (!released) {
@@ -154,5 +154,9 @@ public class CheckoutConfirmedHandler {
         if (!condition) {
             throw new IllegalArgumentException(message);
         }
+    }
+
+    private String ownerToken() {
+        return instanceId + ":" + UUID.randomUUID();
     }
 }
