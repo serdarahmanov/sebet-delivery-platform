@@ -105,6 +105,7 @@ Compile without running tests:
 - verification code validation against C7 with DB fallback
 - `VerificationCodeNotFoundException` on missing code in both stores
 - promo-service `update-after-proposal` application, including final repriced item replacement, proposal `APPLIED` marking, idempotent replay Redis refresh, C2/C8/C4/C6 Redis updater behavior, and `OrderProposalApplied` outbox event payload writing
+- internal `update-after-proposal` controller validation and status mapping for success, missing `Idempotency-Key`, invalid request body, not-found, and invalid-transition responses
 
 ## Unit Tests To Add
 
@@ -145,6 +146,7 @@ Implemented integration coverage:
 - Kafka retry/DLT behavior
 - checkout event consumption with Redis lock support
 - idempotent command reservation visibility, same-key in-progress conflict, completed replay, and expired reservation reclaim against real PostgreSQL transactions
+- internal `update-after-proposal` apply flow against real PostgreSQL and Redis, verifying durable item replacement, proposal `APPLIED`, status history, outbox event, idempotent command completion, and C6 proposal-marker removal
 
 Additional integration tests to add:
 
