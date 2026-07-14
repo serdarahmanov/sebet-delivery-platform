@@ -17,6 +17,10 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 order-service:
+  idempotency:
+    completed-retention: ${ORDER_SERVICE_IDEMPOTENCY_COMPLETED_RETENTION:PT168H}
+    abandoned-in-progress-retention: ${ORDER_SERVICE_IDEMPOTENCY_ABANDONED_IN_PROGRESS_RETENTION:PT1H}
+    cleanup-interval-ms: ${ORDER_SERVICE_IDEMPOTENCY_CLEANUP_INTERVAL_MS:600000}
   scheduled-order:
     min-lead-time-minutes: 60
     slot-interval-minutes: 15

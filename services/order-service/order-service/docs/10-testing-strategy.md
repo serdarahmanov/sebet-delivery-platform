@@ -2,7 +2,7 @@
 
 ## Current Tests
 
-The project currently has 240 order-service tests covering:
+The project currently has order-service tests covering:
 
 - Redis key generation.
 - MVC interceptor tests for `X-User-Id`, `X-Store-Id`, and `X-Internal-Key`.
@@ -93,7 +93,7 @@ Compile without running tests:
 - cache-eviction projection consumer strategy dispatch, unknown cacheName skipping, and multi-strategy routing
 - `OrderCacheEvictionRequested` outbox event payload writing
 - C2 eviction coordinator direct-delete, Redis-failure fallback-event, fallback-failure, non-Redis failure propagation, and generic strategy routing behavior
-- idempotent command recording, replay, and request-conflict behavior
+- idempotent command reservation, `IN_PROGRESS` conflict, completed replay, request-conflict, expired-lease reclaim, and failure cleanup behavior
 - `DriverAssignmentDeclined` outbox event payload writing
 - `DriverAssigned`, `DriverReplaced`, and `DriverUnassigned` outbox event payload writing
 - driver ownership verification (`DRIVER_NOT_ASSIGNED`)
@@ -138,6 +138,7 @@ Implemented integration coverage:
 - Kafka listener integration against a real broker
 - Kafka retry/DLT behavior
 - checkout event consumption with Redis lock support
+- idempotent command reservation visibility, same-key in-progress conflict, completed replay, and expired reservation reclaim against real PostgreSQL transactions
 
 Additional integration tests to add:
 

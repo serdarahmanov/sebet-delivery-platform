@@ -19,6 +19,7 @@ Implemented:
 - Flyway migration `V1__create_order_tables.sql` covering the base order schema, outbox events, processed-events idempotency, enum rename, and the extended order/item schema.
 - Flyway migration `V3__create_idempotent_commands.sql` for REST write idempotency.
 - Flyway migration `V4__create_order_proposals_table.sql` for durable storage of store-proposed item changes.
+- Flyway migration `V8__strengthen_idempotent_commands.sql` for idempotent command status, lease ownership, completion timestamps, and cleanup/reclaim indexes.
 - JSONB mapping for the delivery address snapshot and status metadata.
 - Unique `orders.cart_id` idempotency constraint.
 - Unique per-order `order_items.line_number` constraint.
@@ -85,7 +86,7 @@ The current durable schema stores:
 - `order_status_history`: append-style status transition records.
 - `outbox_event`: append-only order business events for Debezium publication.
 - `processed_events`: consumed integration event ids already applied by order-service.
-- `idempotent_commands`: committed REST write command responses keyed by action and `Idempotency-Key`.
+- `idempotent_commands`: REST write idempotency reservations and completed responses keyed by action and `Idempotency-Key`.
 
 Important constraints and indexes:
 
@@ -104,8 +105,9 @@ Important constraints and indexes:
 - `processed_events.event_id` primary key prevents the same checkout event from being applied twice.
 - `processed_events(event_type, processed_at)` supports operational review of processed integration events.
 - `idempotent_commands.id` primary key.
-- `idempotent_commands(action, idempotency_key)` unique index prevents duplicate command execution for the same action.
+- `idempotent_commands(action, idempotency_key)` unique index allows only one reservation or completed response for the same action/key.
 - `idempotent_commands(order_id, action, created_at desc)` supports operational lookup by order/action.
+- `idempotent_commands(status, locked_until)` supports cleanup and expired `IN_PROGRESS` lease recovery.
 - `order_proposals.order_id` foreign key to `orders.id` with cascade delete.
 - `order_proposals.order_id` unique constraint prevents more than one active proposal per order.
 - `order_proposals.items_json` stores the proposed item list as `jsonb`.
@@ -132,9 +134,12 @@ Customer active-order reads skip C1 entries whose C2 snapshot is missing or
 belongs to a different user. Single-order customer reads still hide wrong-owner
 access with `404 ORDER_NOT_FOUND`.
 
-Driver assignment writes, driver decline, and store cancel write the order
-change, outbox event, and idempotent command record in one PostgreSQL
-transaction. After that commit, assignment/decline try to evict C2, while store
+Driver assignment writes, driver decline, and store cancel first reserve the
+`Idempotency-Key` as `IN_PROGRESS` in PostgreSQL. The owning request then writes
+the order change, outbox event, and completed idempotent command response. A
+concurrent retry with the same key returns `IDEMPOTENCY_REQUEST_IN_PROGRESS`;
+after completion it replays the stored response. After the business commit,
+assignment/decline try to evict C2, while store
 cancel tries to evict `CANCELLED_ORDER_HOT_VIEWS` (C1/C1b membership removal
 plus C2/C3/C4/C6 deletes). If Redis is unavailable or the eviction result is
 unknown because the Redis command times out, they write an
@@ -146,14 +151,24 @@ retry with the same `Idempotency-Key` replays the stored response and repeats
 the eviction path, without duplicating the order update or business outbox
 event.
 
-Store propose-changes writes the order status change, status history, proposal
-record, `OrderProposedToCustomer` outbox event, and idempotent command record in
-one PostgreSQL transaction. After that commit, the endpoint atomically updates
-C8, C4, and C6 using `proposeChangesRedisUpdateScript`. If the Lua script throws
-a recoverable Redis failure, `requestEvictionAfterUpdateFailure` is called,
-which skips any direct eviction attempt and immediately writes one
-`OrderCacheEvictionRequested` event with the `PROPOSE_CHANGES_HOT_VIEWS`
-strategy, so the consumer can evict C8, C4, and C6 once Redis recovers.
+Store propose-changes first reserves the `Idempotency-Key` as `IN_PROGRESS`.
+The owning request then writes the order status change, status history, proposal
+record, `OrderProposedToCustomer` outbox event, and completed idempotent
+response. After that commit, the endpoint atomically updates C8, C4, and C6
+using `proposeChangesRedisUpdateScript`. If the Lua script throws a recoverable
+Redis failure, `requestEvictionAfterUpdateFailure` is called, which skips any
+direct eviction attempt and immediately writes one `OrderCacheEvictionRequested`
+event with the `PROPOSE_CHANGES_HOT_VIEWS` strategy, so the consumer can evict
+C8, C4, and C6 once Redis recovers.
+
+Idempotent command leases default to two minutes
+(`order-service.idempotency.in-progress-lease=PT2M`). Completed rows are
+retained for seven days by default, abandoned `IN_PROGRESS` rows are retained
+for one hour after their lock expires, and cleanup runs every ten minutes.
+Cleanup defaults are configured through environment-backed application
+properties: `ORDER_SERVICE_IDEMPOTENCY_COMPLETED_RETENTION`,
+`ORDER_SERVICE_IDEMPOTENCY_ABANDONED_IN_PROGRESS_RETENTION`, and
+`ORDER_SERVICE_IDEMPOTENCY_CLEANUP_INTERVAL_MS`.
 
 JPA Open Session in View is disabled. Service methods should load and map all
 data needed by REST responses inside explicit transactional boundaries.

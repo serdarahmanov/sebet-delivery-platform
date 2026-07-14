@@ -42,9 +42,19 @@ public class IdempotentCommandEntity {
     @Column(nullable = false, length = 64)
     private String requestHash;
 
-    @Column(nullable = false, columnDefinition = "jsonb")
+    @Column(columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private String responseJson;
+
+    @Column(nullable = false, length = 20)
+    private String status;
+
+    @Column(length = 120)
+    private String lockedBy;
+
+    private OffsetDateTime lockedUntil;
+
+    private OffsetDateTime completedAt;
 
     @Column(nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -63,6 +73,9 @@ public class IdempotentCommandEntity {
         }
         if (updatedAt == null) {
             updatedAt = now;
+        }
+        if (status == null) {
+            status = "COMPLETED";
         }
     }
 

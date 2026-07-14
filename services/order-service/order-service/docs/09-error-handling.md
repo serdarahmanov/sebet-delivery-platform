@@ -31,6 +31,7 @@ Implemented in `shared/exception/ErrorResponse.java` (Java record). MVC intercep
 | `VerificationCodeNotFoundException` | 404 | `VERIFICATION_CODE_NOT_FOUND` |
 | `OrderInvalidTransitionException` | 409 | `ORDER_INVALID_TRANSITION` |
 | `IdempotencyKeyConflictException` | 409 | `IDEMPOTENCY_KEY_CONFLICT` |
+| `IdempotencyRequestInProgressException` | 409 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` |
 | `OptimisticLockingFailureException` | 409 | `ORDER_INVALID_TRANSITION` |
 | `CacheInvalidationFailedException` | 503 | `CACHE_INVALIDATION_FAILED` |
 | `UnsupportedOperationException` | 501 | `NOT_IMPLEMENTED` |
@@ -43,7 +44,7 @@ Unhandled exceptions are logged at ERROR level before returning `INTERNAL_ERROR`
 - `400 Bad Request`: invalid request body, failed bean validation, missing/blank identity header, or submitted verification code does not match stored code.
 - `403 Forbidden`: invalid `X-Internal-Key` value, or `X-Driver-Id` does not match the driver assigned to the order.
 - `404 Not Found`: no handler matched the requested path, the order does not exist, order ownership should be hidden, or verification code not found in Redis or DB.
-- `409 Conflict`: invalid lifecycle transition, stale concurrent lifecycle update, or reused `Idempotency-Key` with a different request body.
+- `409 Conflict`: invalid lifecycle transition, stale concurrent lifecycle update, reused `Idempotency-Key` with a different request body, or retry of an idempotent request that is still in progress.
 - `503 Service Unavailable`: a write committed, direct Redis hot-view eviction failed with a recoverable Redis failure, and the fallback `OrderCacheEvictionRequested` event could not be recorded; retry the same request, reusing the same `Idempotency-Key` only for endpoints that require one.
 - `501 Not Implemented`: endpoint contract exists but business logic is not yet built.
 - `500 Internal Server Error`: unexpected server failure.
@@ -57,7 +58,9 @@ Checkout envelope fields are validated in `CheckoutConfirmedHandler` before orde
 For checkout events, `processed_events` is recorded only after order creation and post-commit Redis initialization both succeed. That keeps cache-repair replays possible if Redis fails after the database commit.
 
 Driver assignment writes, driver decline, and store cancel require
-`Idempotency-Key`. Reusing the same key with the same request returns the stored
+`Idempotency-Key`. The first request reserves the key as `IN_PROGRESS`; a
+concurrent retry with the same key returns `409 IDEMPOTENCY_REQUEST_IN_PROGRESS`.
+After completion, reusing the same key with the same request returns the stored
 response and repeats the eviction path. Assignment/decline replay C2 eviction;
 store cancel replays `CANCELLED_ORDER_HOT_VIEWS`. If Redis is unavailable or the
 Redis command result is unknown, `OrderCacheEvictionRequested` is recorded and

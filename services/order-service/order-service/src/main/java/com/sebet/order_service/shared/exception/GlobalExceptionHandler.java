@@ -102,6 +102,12 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("IDEMPOTENCY_KEY_CONFLICT", ex.getMessage()));
     }
 
+    @ExceptionHandler(IdempotencyRequestInProgressException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyRequestInProgress(IdempotencyRequestInProgressException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("IDEMPOTENCY_REQUEST_IN_PROGRESS", ex.getMessage()));
+    }
+
     @ExceptionHandler(CacheInvalidationFailedException.class)
     public ResponseEntity<ErrorResponse> handleCacheInvalidationFailed(CacheInvalidationFailedException ex) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)

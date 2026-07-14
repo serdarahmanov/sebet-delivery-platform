@@ -29,29 +29,29 @@ Implemented:
 - Store `OUT_OF_STOCK` rejection validation verifies that item details are present, belong to the order, match requested quantity/unit, and provide a valid partial-stock quantity when applicable.
 - Store `OUT_OF_STOCK` rejection validation rejects duplicate product ids and null list elements.
 - Store rejection and cancellation metadata is persisted into `order_status_history.metadata_json`.
-- Store `/cancel` requires `Idempotency-Key`; the order update, lifecycle outbox event, and idempotent command record commit together, and idempotent replay reruns Redis cleanup.
+- Store `/cancel` requires `Idempotency-Key`; the key is reserved as `IN_PROGRESS` before business execution, the owning request stores the completed response after the order update and lifecycle outbox event, and idempotent replay reruns Redis cleanup.
 - `OrderLifecycleService` implements driver lifecycle transitions:
   - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY` through `POST /api/v1/driver/orders/{orderId}/pickup`
   - `OUT_FOR_DELIVERY -> ARRIVED` through `POST /api/v1/driver/orders/{orderId}/arrive`
   - `ARRIVED -> DELIVERED` through `POST /api/v1/driver/orders/{orderId}/complete`
 - `OrderLifecycleService` implements internal scheduled activation:
   - manual admin/support `SCHEDULED -> PENDING` through `POST /api/v1/internal/orders/{orderId}/activate-scheduled`
-  - activation persists status history, emits `OrderActivated`, and stores the idempotent command response in one database transaction
+  - activation reserves the idempotency key first, then persists status history, emits `OrderActivated`, and stores the completed idempotent response
   - after commit and on idempotent replay, activation atomically moves Redis hot views from Cache 1c to Cache 1 and Cache 1b and updates Cache 4 through a Lua script
   - recoverable Redis activation-update failures write an `OrderCacheEvictionRequested` event for `SCHEDULED_ACTIVATION_HOT_VIEWS`
 - `OrderLifecycleService` implements internal system cancellation:
   - automated system `PENDING`, `CONFIRMED`, `AWAITING_CUSTOMER_RESPONSE`, `SCHEDULED`, or `READY_FOR_PICKUP` -> `CANCELLED` through `POST /api/v1/internal/orders/{orderId}/system-cancel`
   - admin override cancellation for any non-`DELIVERED` order through `POST /api/v1/internal/orders/{orderId}/admin-cancel`
   - allowed reasons are `PAYMENT_FAILED`, `NO_RIDERS_AVAILABLE`, `STORE_RESPONSE_TIMEOUT`, `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`, and `SYSTEM_ERROR`
-  - cancellation persists status history, emits the lifecycle outbox event, and stores the idempotent command response in one database transaction
+  - cancellation reserves the idempotency key first, then persists status history, emits the lifecycle outbox event, and stores the completed idempotent response
   - after commit and on idempotent replay, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS` to remove C1/C1b membership and delete C2/C3/C4/C6 through the recoverable eviction fallback pattern
 - `DriverOrderLifecycleService` implements driver delivery detail and assignment decline:
   - `GET /api/v1/driver/orders/{orderId}` returns assigned delivery detail from C2 + C4, with DB fallback.
-  - `POST /api/v1/driver/orders/{orderId}/decline` clears `driverId` / `driverAssignedAt` before pickup, writes `DriverAssignmentDeclined` and the idempotent command record in the same database transaction, then tries to evict C2 after commit.
+  - `POST /api/v1/driver/orders/{orderId}/decline` reserves the idempotency key, clears `driverId` / `driverAssignedAt` before pickup, writes `DriverAssignmentDeclined`, stores the completed idempotent response, then tries to evict C2 after commit.
 - `InternalDriverAssignmentService` implements internal driver assignment:
   - `POST /api/v1/internal/orders/{orderId}/assign-driver` assigns a driver, idempotently returns the same driver assignment, or replaces a different driver.
   - `POST /api/v1/internal/orders/{orderId}/unassign-driver` clears the assigned driver on non-terminal orders.
-  - Assignment writes persist the order change, `DriverAssigned`, `DriverReplaced`, or `DriverUnassigned` outbox event, and idempotent command record in the same database transaction, then try to evict C2 Redis after commit.
+  - Assignment writes reserve the idempotency key, persist the order change, write `DriverAssigned`, `DriverReplaced`, or `DriverUnassigned` outbox event, store the completed idempotent response, then try to evict C2 Redis after commit.
 - `OrderCacheEvictionService` handles direct Redis hot-view eviction and fallback event recording:
   - direct Redis eviction success returns normally
   - Redis connection failure or command timeout writes `OrderCacheEvictionRequested` and lets the endpoint return success
@@ -72,19 +72,19 @@ Implemented:
 - Store `/cancel` uses `CANCELLED_ORDER_HOT_VIEWS` after commit and on idempotent replay. The strategy removes C1/C1b memberships and deletes C2, C3, C4, and C6 in one Redis Lua script. Recoverable Redis failures or timeouts write one `OrderCacheEvictionRequested` event with all target `cacheKeys`; non-Redis failures propagate.
 - `StoreOrderLifecycleService.proposeChanges` and `OrderLifecycleService.storeProposeChangesWithoutRedisUpdate` / `updateProposeChangesRedisViews` implement `POST /api/v1/store/orders/{orderId}/propose-changes`:
   - validates that `productName`, `unit`, and `requestedQuantity` in each proposed item match the persisted order item
-  - transitions `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE`, appends status history, persists the proposal record and `OrderProposedToCustomer` outbox event, and stores the idempotent command response in one database transaction
+  - reserves the idempotency key, transitions `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE`, appends status history, persists the proposal record and `OrderProposedToCustomer` outbox event, and stores the completed idempotent response
   - atomically updates C8, C4, and C6 via `proposeChangesRedisUpdateScript` after commit; recoverable Redis failures fall back to `requestEvictionAfterUpdateFailure` with `PROPOSE_CHANGES_HOT_VIEWS`, which writes one `OrderCacheEvictionRequested` event without attempting direct eviction
   - `OrderProposeChangesRedisUpdater` builds and executes the Lua script; `ProposeChangesHotViewsEvictionStrategy` handles grouped eviction of C8 + C4 + C6 for the consumer path
 - `InternalOrderLifecycleService.cancelActiveProposal` implements `POST /api/v1/internal/orders/{orderId}/cancel-active-proposal`:
   - transitions `AWAITING_CUSTOMER_RESPONSE -> CONFIRMED`
   - marks the proposal row as `CANCELLED` (retained for audit; not deleted)
-  - appends status history, emits `OrderActiveProposalCancelled`, and stores the idempotent command response in one database transaction
+  - reserves the idempotency key, appends status history, emits `OrderActiveProposalCancelled`, and stores the completed idempotent response
   - atomically deletes C8, updates C4 to `CONFIRMED`, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 via `cancelActiveProposalRedisUpdateScript`; recoverable Redis failures fall back to `CANCEL_ACTIVE_PROPOSAL_HOT_VIEWS`
 - `InternalOrderLifecycleService.cancelProposalAndOrder` implements `POST /api/v1/internal/orders/{orderId}/cancel-proposal-and-order`:
   - transitions `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`
   - marks the proposal row as `TIMED_OUT` (retained for audit; not deleted)
   - cancellation reason is fixed to `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`
-  - appends status history, emits `OrderCancelled`, and stores the idempotent command response in one database transaction
+  - reserves the idempotency key, appends status history, emits `OrderCancelled`, and stores the completed idempotent response
   - after commit and on idempotent replay, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS` (C1, C1b, C2, C3, C4, C6, C8) through the recoverable eviction fallback pattern
 - Any cancellation applied to an order in `AWAITING_CUSTOMER_RESPONSE` (system-cancel, admin-cancel, store cancel) marks the active proposal row as `SYSTEM_CANCELLED` or `STORE_CANCELLED` within the same database transaction.
 - `ProposalStatus` enum tracks the full proposal lifecycle: `ACTIVE`, `ACCEPTED`, `APPLIED`, `REJECTED`, `CANCELLED`, `TIMED_OUT`, `SYSTEM_CANCELLED`, `STORE_CANCELLED`.
@@ -128,8 +128,10 @@ Implemented:
 - JPA repositories
 - Flyway migration `V1__create_order_tables.sql` covering the base order schema, outbox event table, processed-events idempotency, enum rename, and the extended order/item schema
 - Flyway migration `V3__create_idempotent_commands.sql` covering REST write idempotency records
+- Flyway migration `V8__strengthen_idempotent_commands.sql` covering idempotent command reservation status, lease ownership, completion timestamps, and cleanup/reclaim indexing
 - unique `cart_id` idempotency constraint
 - unique `(action, idempotency_key)` idempotent command constraint
+- `(status, locked_until)` idempotent command cleanup and expired-lease reclaim index
 - optimistic lock `orders.version` column
 - unique `(order_id, product_id)` order item constraint
 - repository tests
@@ -229,6 +231,7 @@ Implemented:
 - `DriverNotAssignedException` maps to `403 DRIVER_NOT_ASSIGNED`.
 - `VerificationCodeNotFoundException` maps to `404 VERIFICATION_CODE_NOT_FOUND`.
 - `IdempotencyKeyConflictException` maps to `409 IDEMPOTENCY_KEY_CONFLICT`.
+- `IdempotencyRequestInProgressException` maps to `409 IDEMPOTENCY_REQUEST_IN_PROGRESS`.
 - `CacheInvalidationFailedException` maps to `503 CACHE_INVALIDATION_FAILED`.
 - `ScheduledOrderModificationWindowClosedException` maps to `409 MODIFICATION_WINDOW_CLOSED`.
 - `InvalidScheduledWindowException` maps to `400 INVALID_SCHEDULED_WINDOW`.
