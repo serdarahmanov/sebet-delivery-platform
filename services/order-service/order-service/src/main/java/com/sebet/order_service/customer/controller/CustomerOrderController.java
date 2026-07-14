@@ -249,7 +249,7 @@ public class CustomerOrderController {
      *   AWAITING_CUSTOMER_RESPONSE — customer accepted (ACCEPT_ALL or ACCEPT_WITH_MODIFICATIONS);
      *                                OrderProposalAccepted event published; order stays in this
      *                                status until the promo service recalculates and calls back via
-     *                                POST /internal/orders/{orderId}/update-after-proposal.
+     *                                POST /api/v1/internal/orders/{orderId}/update-after-proposal.
      *   CANCELLED                  — customer chose CANCEL_ORDER; order cancelled immediately.
      *
      * Clears Cache 8 (proposals) on completion regardless of outcome.

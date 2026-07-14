@@ -128,7 +128,7 @@ Proposal cancellation has two distinct pending endpoint families:
 - internal `cancel-active-proposal` removes the active proposal without cancelling the order, moves the order back to `CONFIRMED`, deletes C8, updates C4, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 so a corrected proposal can be submitted later.
 - `cancel-proposal-and-order` removes the active proposal and cancels the order.
 
-The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response and proposal cancellation transitions remain pending.
+The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response, internal proposal cancellation, proposal timeout cancellation, and promo-service proposal application are implemented.
 
 ## Cancellation Paths
 
@@ -171,3 +171,5 @@ This timeline is intentionally simpler than the internal order status enum. `CON
 `PACKED`, `ON_THE_WAY`, and `ARRIVED` are deduplicated before append. `DELIVERED` is appended unconditionally since it is terminal and fires exactly once. On cancellation the entire C6 timeline is deleted.
 
 When the store proposes changes, an additional `AWAITING_CUSTOMER_RESPONSE` entry is appended to C6 (alongside the C8 and C4 updates). This entry signals to the customer app that a decision is pending. It is not one of the five delivery-path steps and does not affect `PACKED`, `ON_THE_WAY`, `ARRIVED`, or `DELIVERED` deduplication logic.
+
+When the proposal flow is resolved without cancelling the order, C6 does not get a new delivery-path step. Both internal `cancel-active-proposal` and promo-service `update-after-proposal` remove `AWAITING_CUSTOMER_RESPONSE` entries from C6 and set C4 back to `CONFIRMED`. The promo callback also deletes C2 because totals/items changed and the next read must rebuild the order snapshot from PostgreSQL.

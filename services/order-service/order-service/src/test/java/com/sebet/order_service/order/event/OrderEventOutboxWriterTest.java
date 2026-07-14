@@ -3,11 +3,15 @@ package com.sebet.order_service.order.event;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.persistence.entity.OrderEntity;
+import com.sebet.order_service.persistence.entity.OrderItemEntity;
+import com.sebet.order_service.persistence.entity.OrderProposalEntity;
 import com.sebet.order_service.persistence.entity.OutboxEventEntity;
 import com.sebet.order_service.persistence.repository.OutboxEventRepository;
 import com.sebet.order_service.shared.enums.OrderCancellationReason;
 import com.sebet.order_service.shared.enums.OrderCancelledBy;
 import com.sebet.order_service.shared.enums.OrderStatus;
+import com.sebet.order_service.shared.enums.ProductUnit;
+import com.sebet.order_service.shared.enums.ProposalStatus;
 import com.sebet.order_service.shared.enums.ScheduleType;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -185,6 +189,58 @@ class OrderEventOutboxWriterTest {
         assertThat(payload.path("data").path("storeId").asText()).isEqualTo("store-1");
         assertThat(payload.path("data").path("itemsJson").asText()).isEqualTo(itemsJson);
         assertThat(payload.path("data").path("proposedAt").asText()).isEqualTo(proposedAt.toString());
+    }
+
+    @Test
+    void saveOrderProposalAppliedEmitsAppliedEvent() throws Exception {
+        OrderEntity order = order(OrderStatus.CONFIRMED);
+        order.setSubtotalAmount(new BigDecimal("10000.00"));
+        order.setItemDiscountAmount(new BigDecimal("1000.00"));
+        order.setOrderDiscountAmount(new BigDecimal("500.00"));
+        order.setDeliveryFeeAmount(new BigDecimal("3000.00"));
+        order.setServiceFeeAmount(BigDecimal.ZERO);
+        order.setSmallOrderFeeAmount(BigDecimal.ZERO);
+        order.setTotalAmount(new BigDecimal("11500.00"));
+        order.setSelectedPromoCodes(List.of("PROMO500"));
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(UUID.randomUUID())
+                .orderId(order.getId())
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\"}]")
+                .status(ProposalStatus.APPLIED)
+                .build();
+        OrderItemEntity item = OrderItemEntity.builder()
+                .orderId(order.getId())
+                .lineNumber(1)
+                .productId("p1")
+                .productName("Apples")
+                .quantity(new BigDecimal("1.000"))
+                .unit(ProductUnit.KG)
+                .unitPriceAmount(new BigDecimal("10000.00"))
+                .grossAmount(new BigDecimal("10000.00"))
+                .discountAmount(new BigDecimal("1000.00"))
+                .netAmount(new BigDecimal("9000.00"))
+                .createdAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .build();
+        OffsetDateTime appliedAt = OffsetDateTime.parse("2026-07-10T10:00:00Z");
+
+        writer.saveOrderProposalApplied(order, proposal, "calc-1", List.of(item), appliedAt);
+
+        ArgumentCaptor<OutboxEventEntity> captor = ArgumentCaptor.forClass(OutboxEventEntity.class);
+        verify(outboxEventRepository).save(captor.capture());
+        OutboxEventEntity event = captor.getValue();
+        JsonNode payload = objectMapper.readTree(event.getPayload());
+
+        assertThat(event.getEventType()).isEqualTo("OrderProposalApplied");
+        assertThat(payload.path("eventType").asText()).isEqualTo("OrderProposalApplied");
+        assertThat(payload.path("data").path("proposalId").asText()).isEqualTo(proposal.getId().toString());
+        assertThat(payload.path("data").path("promoCalculationId").asText()).isEqualTo("calc-1");
+        assertThat(payload.path("data").path("totalAmount").decimalValue()).isEqualByComparingTo("11500.00");
+        assertThat(payload.path("data").path("selectedPromoCodes").get(0).asText()).isEqualTo("PROMO500");
+        assertThat(payload.path("data").path("items").get(0).path("productId").asText()).isEqualTo("p1");
+        assertThat(payload.path("data").path("items").get(0).path("netAmount").decimalValue())
+                .isEqualByComparingTo("9000.00");
     }
 
     @Test

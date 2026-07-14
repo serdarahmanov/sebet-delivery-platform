@@ -65,7 +65,7 @@ Implemented:
   - dispatches `OrderCacheEvictionRequested` events to the matching `CacheEvictionStrategy` by `data.cacheName`; unknown cache names are skipped with a warning
   - uses MANUAL ack mode; pauses container on `RedisConnectionFailureException` or `QueryTimeoutException` without committing the offset
   - `RedisRecoveryScheduler` probes Redis every 10 seconds (500 ms timeout) and resumes the container when Redis responds
-- `CacheEvictionStrategy` interface allows adding eviction support for any cache key or grouped hot-view cleanup by implementing a single `@Component`; current implementations are `C2CacheEvictionStrategy`, `CancelledOrderHotViewsCacheEvictionStrategy`, `ProposeChangesHotViewsEvictionStrategy`, `CancelActiveProposalHotViewsEvictionStrategy`, and `RespondAcceptHotViewsEvictionStrategy`
+- `CacheEvictionStrategy` interface allows adding eviction support for any cache key or grouped hot-view cleanup by implementing a single `@Component`; current implementations are `C2CacheEvictionStrategy`, `CancelledOrderHotViewsCacheEvictionStrategy`, `ProposeChangesHotViewsEvictionStrategy`, `CancelActiveProposalHotViewsEvictionStrategy`, `RespondAcceptHotViewsEvictionStrategy`, and `ApplyProposalHotViewsEvictionStrategy`
 - Driver transitions verify `driverId` ownership, returning `403 DRIVER_NOT_ASSIGNED` on mismatch.
 - `arrive` generates a 2-digit verification code written to C7 (30-min TTL) and persisted to `order_status_history.metadata_json` as a permanent fallback.
 - `complete` validates the submitted code against C7, falling back to `order_status_history` if C7 has expired. Wrong code returns `400`; code not found in either store returns `404 VERIFICATION_CODE_NOT_FOUND`.
@@ -101,6 +101,13 @@ Implemented:
   - after commit, accept path atomically deletes C8 via `respondAcceptRedisUpdateScript`; recoverable Redis failures fall back to `RESPOND_ACCEPT_HOT_VIEWS`
   - ACCEPT_WITH_MODIFICATIONS requires non-empty `itemDecisions`; 400 returned when empty
   - item decision validation: rejects duplicate productIds, unknown productIds, missing decisions for proposed items, `ACCEPT_PROPOSED_QUANTITY` on fully-out-of-stock items, `REQUEST_CUSTOM_QUANTITY` without `customQuantity` or with quantity exceeding available stock
+- `InternalOrderLifecycleService.updateAfterProposal` implements `POST /api/v1/internal/orders/{orderId}/update-after-proposal`:
+  - requires `Idempotency-Key`
+  - validates that the referenced proposal belongs to the order and is `ACCEPTED`
+  - validates order status `AWAITING_CUSTOMER_RESPONSE` and callback currency matches the order currency
+  - replaces durable order items with the final repriced existing-product snapshot from promo service
+  - updates order totals, selected promo codes, proposal status `APPLIED`, status history, and emits `OrderProposalApplied`
+  - after commit and on idempotent replay, deletes stale C2, deletes C8, sets C4 to `CONFIRMED`, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 through `applyProposalRedisUpdateScript`; recoverable Redis failures fall back to `APPLY_PROPOSAL_HOT_VIEWS`
 - `CustomerOrderLifecycleService.updateScheduledOrder` implements `PATCH /api/v1/orders/scheduled/{orderId}`:
   - at least one of `scheduledWindowStart`, `newAddress`, or `phoneNumber` must be non-null; empty body returns 400
   - 409 `MODIFICATION_WINDOW_CLOSED` when `scheduledFor ≤ now + modificationCutoffMinutes` (default 40 min, configurable)
@@ -117,10 +124,6 @@ Implemented:
 - `phoneNumber` propagated through checkout event (`DeliverySnapshot`) → `CreateOrderCommand` → `OrderEntity` → Cache 2 (`DeliveryAddress`) → all customer and store `DeliveryAddressDto` response fields
 - `StoreServiceClient`: `RestTemplate`-based HTTP client, `GET {baseUrl}/api/v1/stores/{storeId}/working-hours`, 3-retry loop, parses env-variable fallback on all failures
 - `OrderScheduledUpdateRedisWriter`: removes + re-adds the order in Cache 1c ZSET with the new score if `scheduledFor` changed; deletes Cache 2 snapshot (rebuild-on-next-read) if address or phone changed
-
-Pending:
-
-- promo service callback: `POST /api/v1/internal/orders/{orderId}/update-after-proposal` — applies recalculated totals and transitions `AWAITING_CUSTOMER_RESPONSE -> CONFIRMED`; marks proposal `APPLIED`
 
 ## Database
 
@@ -225,6 +228,7 @@ Implemented:
 - `POST /{orderId}/admin-cancel` - admin override cancellation
 - `POST /{orderId}/cancel-active-proposal` - cancel active proposal without cancelling the order; marks proposal `CANCELLED`
 - `POST /{orderId}/cancel-proposal-and-order` - `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`; marks proposal `TIMED_OUT`
+- `POST /{orderId}/update-after-proposal` - applies promo recalculation, marks proposal `APPLIED`, and returns the order to `CONFIRMED`
 
 ## Error Handling
 

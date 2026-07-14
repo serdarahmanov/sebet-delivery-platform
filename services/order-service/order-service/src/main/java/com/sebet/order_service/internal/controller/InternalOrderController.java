@@ -3,12 +3,14 @@ package com.sebet.order_service.internal.controller;
 import com.sebet.order_service.internal.dto.request.AssignDriverRequest;
 import com.sebet.order_service.internal.dto.request.SystemCancelOrderRequest;
 import com.sebet.order_service.internal.dto.request.UnassignDriverRequest;
+import com.sebet.order_service.internal.dto.request.UpdateAfterProposalRequest;
 import com.sebet.order_service.internal.dto.response.ActivateScheduledOrderResponse;
 import com.sebet.order_service.internal.dto.response.AssignDriverResponse;
 import com.sebet.order_service.internal.dto.response.CancelActiveProposalResponse;
 import com.sebet.order_service.internal.dto.response.CancelProposalResponse;
 import com.sebet.order_service.internal.dto.response.SystemCancelOrderResponse;
 import com.sebet.order_service.internal.dto.response.UnassignDriverResponse;
+import com.sebet.order_service.internal.dto.response.UpdateAfterProposalResponse;
 import com.sebet.order_service.internal.service.InternalDriverAssignmentService;
 import com.sebet.order_service.internal.service.InternalOrderLifecycleService;
 import jakarta.validation.Valid;
@@ -142,5 +144,22 @@ public class InternalOrderController {
             @PathVariable String orderId
     ) {
         return ResponseEntity.ok(orderLifecycleService.cancelProposalAndOrder(orderId, idempotencyKey));
+    }
+
+    /**
+     * Applies promo-service recalculation after the customer accepts a proposal.
+     *
+     * Valid only when the order is still waiting for the proposal response flow
+     * to finish and the referenced proposal is ACCEPTED.
+     *
+     * Requires Idempotency-Key.
+     */
+    @PostMapping("/{orderId}/update-after-proposal")
+    public ResponseEntity<UpdateAfterProposalResponse> updateAfterProposal(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @PathVariable String orderId,
+            @RequestBody @Valid UpdateAfterProposalRequest request
+    ) {
+        return ResponseEntity.ok(orderLifecycleService.updateAfterProposal(orderId, request, idempotencyKey));
     }
 }

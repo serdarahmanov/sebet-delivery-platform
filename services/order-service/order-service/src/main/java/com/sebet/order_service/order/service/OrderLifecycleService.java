@@ -4,8 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.cache.dto.OrderProposalsCacheDto;
 import com.sebet.order_service.cache.service.OrderLifecycleRedisUpdater;
+import com.sebet.order_service.cache.service.OrderApplyProposalRedisUpdater;
 import com.sebet.order_service.cache.service.OrderCancelActiveProposalRedisUpdater;
 import com.sebet.order_service.cache.service.OrderProposeChangesRedisUpdater;
+import com.sebet.order_service.internal.dto.request.UpdateAfterProposalItemRequest;
+import com.sebet.order_service.internal.dto.request.UpdateAfterProposalRequest;
 import com.sebet.order_service.order.event.OrderEventOutboxWriter;
 import com.sebet.order_service.order.event.OrderProposalAcceptedEventData;
 import com.sebet.order_service.persistence.entity.OrderEntity;
@@ -56,6 +59,7 @@ public class OrderLifecycleService {
     public static final String INTERNAL_ADMIN_CANCEL_ACTION = "INTERNAL_ADMIN_CANCEL";
     public static final String INTERNAL_CANCEL_ACTIVE_PROPOSAL_ACTION = "INTERNAL_CANCEL_ACTIVE_PROPOSAL";
     public static final String INTERNAL_CANCEL_PROPOSAL_AND_ORDER_ACTION = "INTERNAL_CANCEL_PROPOSAL_AND_ORDER";
+    public static final String INTERNAL_UPDATE_AFTER_PROPOSAL_ACTION = "INTERNAL_UPDATE_AFTER_PROPOSAL";
     public static final String CUSTOMER_CANCEL_ORDER_ACTION = "CUSTOMER_CANCEL_ORDER";
     public static final String CUSTOMER_RESPOND_ACCEPT_ACTION = "CUSTOMER_RESPOND_ACCEPT";
 
@@ -67,6 +71,7 @@ public class OrderLifecycleService {
     private final OrderItemRepository orderItemRepository;
     private final OrderProposeChangesRedisUpdater orderProposeChangesRedisUpdater;
     private final OrderCancelActiveProposalRedisUpdater orderCancelActiveProposalRedisUpdater;
+    private final OrderApplyProposalRedisUpdater orderApplyProposalRedisUpdater;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -643,6 +648,90 @@ public class OrderLifecycleService {
     }
 
     @Transactional
+    public OrderLifecycleResult applyProposalUpdateWithoutRedisUpdate(
+            String orderId,
+            UpdateAfterProposalRequest request
+    ) {
+        validateApplyProposalRequest(request);
+
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus != OrderStatus.AWAITING_CUSTOMER_RESPONSE) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.CONFIRMED);
+        }
+        if (!request.currency().equals(order.getCurrency())) {
+            throw new IllegalArgumentException("currency must match order currency");
+        }
+
+        OrderProposalEntity proposal = orderProposalRepository.findById(request.proposalId())
+                .filter(candidate -> id.equals(candidate.getOrderId()))
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+        if (proposal.getStatus() != ProposalStatus.ACCEPTED) {
+            throw new OrderInvalidTransitionException(orderId, previousStatus, "APPLY_ACCEPTED_PROPOSAL");
+        }
+
+        List<OrderItemEntity> existingItems = orderItemRepository.findByOrderIdOrderByLineNumberAsc(id);
+        Map<String, OrderItemEntity> existingByProductId = existingItems.stream()
+                .collect(Collectors.toMap(OrderItemEntity::getProductId, Function.identity()));
+        List<OrderItemEntity> finalItems = toAppliedOrderItems(id, existingByProductId, request.items());
+
+        OffsetDateTime appliedAt = OffsetDateTime.now();
+        order.setSubtotalAmount(request.subtotalAmount());
+        order.setItemDiscountAmount(request.itemDiscountAmount());
+        order.setOrderDiscountAmount(request.orderDiscountAmount());
+        order.setDeliveryFeeAmount(request.deliveryFeeAmount());
+        order.setServiceFeeAmount(request.serviceFeeAmount());
+        order.setSmallOrderFeeAmount(request.smallOrderFeeAmount());
+        order.setTotalAmount(request.totalAmount());
+        order.setSelectedPromoCodes(request.selectedPromoCodes() == null ? List.of() : request.selectedPromoCodes());
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setUpdatedAt(appliedAt);
+
+        OrderEntity savedOrder = orderRepository.saveAndFlush(order);
+        orderItemRepository.deleteAll(existingItems);
+        orderItemRepository.flush();
+        List<OrderItemEntity> savedItems = orderItemRepository.saveAll(finalItems);
+
+        proposal.setStatus(ProposalStatus.APPLIED);
+        proposal.setAppliedAt(appliedAt);
+        orderProposalRepository.saveAndFlush(proposal);
+
+        orderStatusHistoryRepository.save(OrderStatusHistoryEntity.builder()
+                .orderId(savedOrder.getId())
+                .fromStatus(previousStatus)
+                .toStatus(OrderStatus.CONFIRMED)
+                .changedByType(ACTOR_SYSTEM)
+                .reason("PROPOSAL_APPLIED")
+                .metadataJson(applyProposalMetadata(request.promoCalculationId(), proposal.getId()))
+                .createdAt(appliedAt)
+                .build());
+
+        orderEventOutboxWriter.saveOrderProposalApplied(
+                savedOrder,
+                proposal,
+                request.promoCalculationId(),
+                savedItems,
+                appliedAt
+        );
+        return new OrderLifecycleResult(savedOrder, previousStatus, OrderStatus.CONFIRMED, appliedAt);
+    }
+
+    public void updateApplyProposalRedisViews(OrderEntity order, String idempotencyKey) {
+        orderApplyProposalRedisUpdater.apply(order, idempotencyKey);
+    }
+
+    @Transactional(readOnly = true)
+    public void updateApplyProposalRedisViews(String orderId, String idempotencyKey) {
+        UUID id = parseOrderId(orderId);
+        OrderEntity order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+        orderApplyProposalRedisUpdater.apply(order, idempotencyKey);
+    }
+
+    @Transactional
     public OrderLifecycleResult cancelActiveProposalWithoutRedisUpdate(String orderId) {
         UUID id = parseOrderId(orderId);
         OrderEntity order = orderRepository.findById(id)
@@ -1012,6 +1101,87 @@ public class OrderLifecycleService {
         }
     }
 
+    private void validateApplyProposalRequest(UpdateAfterProposalRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("request is required");
+        }
+        if (request.items() == null || request.items().isEmpty()) {
+            throw new IllegalArgumentException("items must not be empty");
+        }
+        validateAmountIdentity(
+                request.totalAmount(),
+                request.subtotalAmount()
+                        .subtract(request.itemDiscountAmount())
+                        .subtract(request.orderDiscountAmount())
+                        .add(request.deliveryFeeAmount())
+                        .add(request.serviceFeeAmount())
+                        .add(request.smallOrderFeeAmount()),
+                "totalAmount must equal subtotal - discounts + fees"
+        );
+
+        Set<String> seen = new HashSet<>();
+        for (UpdateAfterProposalItemRequest item : request.items()) {
+            if (!seen.add(item.productId())) {
+                throw new IllegalArgumentException("Duplicate productId in items: " + item.productId());
+            }
+            validateAmountIdentity(
+                    item.netAmount(),
+                    item.grossAmount().subtract(item.discountAmount()),
+                    "item netAmount must equal grossAmount - discountAmount for product: " + item.productId()
+            );
+        }
+    }
+
+    private List<OrderItemEntity> toAppliedOrderItems(
+            UUID orderId,
+            Map<String, OrderItemEntity> existingByProductId,
+            List<UpdateAfterProposalItemRequest> items
+    ) {
+        return java.util.stream.IntStream.range(0, items.size())
+                .mapToObj(index -> {
+                    UpdateAfterProposalItemRequest item = items.get(index);
+                    OrderItemEntity existing = existingByProductId.get(item.productId());
+                    if (existing == null) {
+                        throw new IllegalArgumentException("productId is not part of the existing order: "
+                                + item.productId());
+                    }
+                    if (existing.getUnit() != item.unit()) {
+                        throw new IllegalArgumentException("unit must match existing order item for product: "
+                                + item.productId());
+                    }
+                    return OrderItemEntity.builder()
+                            .orderId(orderId)
+                            .lineNumber(index + 1)
+                            .productId(existing.getProductId())
+                            .productName(existing.getProductName())
+                            .quantity(item.quantity())
+                            .unit(item.unit())
+                            .unitPriceAmount(item.unitPriceAmount())
+                            .grossAmount(item.grossAmount())
+                            .discountAmount(item.discountAmount())
+                            .netAmount(item.netAmount())
+                            .sku(existing.getSku())
+                            .imageUrl(existing.getImageUrl())
+                            .createdAt(OffsetDateTime.now())
+                            .build();
+                })
+                .toList();
+    }
+
+    private void validateAmountIdentity(BigDecimal actual, BigDecimal expected, String message) {
+        if (actual.compareTo(expected) != 0) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private String applyProposalMetadata(String promoCalculationId, UUID proposalId) {
+        try {
+            return objectMapper.writeValueAsString(new ApplyProposalMetadata(promoCalculationId, proposalId.toString()));
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to serialize proposal application metadata", exception);
+        }
+    }
+
     private void validateItemDecisions(
             String orderId,
             List<OrderProposalAcceptedEventData.ItemDecisionData> itemDecisions,
@@ -1100,4 +1270,6 @@ public class OrderLifecycleService {
     private interface OrderMutation {
         void apply(OrderEntity order);
     }
+
+    private record ApplyProposalMetadata(String promoCalculationId, String proposalId) {}
 }

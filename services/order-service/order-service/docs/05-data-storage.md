@@ -74,6 +74,7 @@ Key patterns:
 - `releaseLockScript`: deletes `order:lock:{cartId}` only when the stored owner matches the caller.
 - `removeActiveOrderScript`: removes an order id from an active SET and deletes the key if the set becomes empty.
 - `proposeChangesRedisUpdateScript`: atomically writes the proposal JSON to C8, updates the status value in C4, and appends a timeline entry to C6 in one round-trip.
+- `applyProposalRedisUpdateScript`: atomically deletes stale C2 and C8, sets C4 back to `CONFIRMED`, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 after promo service applies an accepted proposal.
 - `evictCancelledOrderHotViewsScript`: atomically removes C1/C1b memberships and deletes C2, C3, C4, and C6 for cancelled-order hot-view cleanup.
 
 These scripts close common Redis race windows.

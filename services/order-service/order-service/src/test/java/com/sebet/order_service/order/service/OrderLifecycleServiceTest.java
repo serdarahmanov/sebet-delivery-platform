@@ -1,11 +1,14 @@
 package com.sebet.order_service.order.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sebet.order_service.cache.service.OrderApplyProposalRedisUpdater;
 import com.sebet.order_service.cache.service.OrderLifecycleRedisUpdater;
 import com.sebet.order_service.cache.service.OrderCancelActiveProposalRedisUpdater;
 import com.sebet.order_service.cache.service.OrderProposeChangesRedisUpdater;
 import com.sebet.order_service.order.event.OrderEventOutboxWriter;
 import com.sebet.order_service.order.event.OrderProposalAcceptedEventData;
+import com.sebet.order_service.internal.dto.request.UpdateAfterProposalItemRequest;
+import com.sebet.order_service.internal.dto.request.UpdateAfterProposalRequest;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.persistence.entity.OrderItemEntity;
 import com.sebet.order_service.persistence.entity.OrderProposalEntity;
@@ -18,6 +21,7 @@ import com.sebet.order_service.shared.enums.OrderCancellationReason;
 import com.sebet.order_service.shared.enums.OrderCancelledBy;
 import com.sebet.order_service.shared.enums.OrderStatus;
 import com.sebet.order_service.shared.enums.ProposalStatus;
+import com.sebet.order_service.shared.enums.ProductUnit;
 import com.sebet.order_service.shared.enums.ScheduleType;
 import com.sebet.order_service.shared.exception.DriverNotAssignedException;
 import com.sebet.order_service.shared.exception.OrderInvalidTransitionException;
@@ -50,6 +54,8 @@ class OrderLifecycleServiceTest {
     private final OrderProposeChangesRedisUpdater orderProposeChangesRedisUpdater = mock(OrderProposeChangesRedisUpdater.class);
     private final OrderCancelActiveProposalRedisUpdater orderCancelActiveProposalRedisUpdater =
             mock(OrderCancelActiveProposalRedisUpdater.class);
+    private final OrderApplyProposalRedisUpdater orderApplyProposalRedisUpdater =
+            mock(OrderApplyProposalRedisUpdater.class);
     private final OrderItemRepository orderItemRepository = mock(OrderItemRepository.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -62,6 +68,7 @@ class OrderLifecycleServiceTest {
             orderItemRepository,
             orderProposeChangesRedisUpdater,
             orderCancelActiveProposalRedisUpdater,
+            orderApplyProposalRedisUpdater,
             objectMapper
     );
 
@@ -1227,8 +1234,155 @@ class OrderLifecycleServiceTest {
         verify(orderCancelActiveProposalRedisUpdater).apply(order, "idem-1");
     }
 
+    @Test
+    void applyProposalUpdate_updatesTotalsItemsProposalStatusAndWritesOutbox() {
+        UUID id = UUID.randomUUID();
+        UUID proposalId = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(proposalId)
+                .orderId(id)
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\"}]")
+                .status(ProposalStatus.ACCEPTED)
+                .build();
+        OrderItemEntity existing = orderItem(id, "p1", "Apples");
+        UpdateAfterProposalRequest request = updateAfterProposalRequest(proposalId);
+
+        when(orderRepository.findById(id)).thenReturn(Optional.of(order));
+        when(orderProposalRepository.findById(proposalId)).thenReturn(Optional.of(proposal));
+        when(orderItemRepository.findByOrderIdOrderByLineNumberAsc(id)).thenReturn(List.of(existing));
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+        when(orderItemRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderProposalRepository.saveAndFlush(proposal)).thenReturn(proposal);
+
+        OrderLifecycleResult result = service.applyProposalUpdateWithoutRedisUpdate(id.toString(), request);
+
+        assertThat(result.previousStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getSubtotalAmount()).isEqualByComparingTo("10000.00");
+        assertThat(order.getItemDiscountAmount()).isEqualByComparingTo("1000.00");
+        assertThat(order.getOrderDiscountAmount()).isEqualByComparingTo("500.00");
+        assertThat(order.getTotalAmount()).isEqualByComparingTo("11500.00");
+        assertThat(order.getSelectedPromoCodes()).containsExactly("PROMO500");
+        assertThat(proposal.getStatus()).isEqualTo(ProposalStatus.APPLIED);
+        assertThat(proposal.getAppliedAt()).isEqualTo(result.changedAt());
+
+        verify(orderItemRepository).deleteAll(List.of(existing));
+        verify(orderItemRepository).flush();
+        ArgumentCaptor<List<OrderItemEntity>> itemsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(orderItemRepository).saveAll(itemsCaptor.capture());
+        assertThat(itemsCaptor.getValue())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.getProductId()).isEqualTo("p1");
+                    assertThat(item.getProductName()).isEqualTo("Apples");
+                    assertThat(item.getQuantity()).isEqualByComparingTo("1.000");
+                    assertThat(item.getNetAmount()).isEqualByComparingTo("9000.00");
+                });
+
+        ArgumentCaptor<OrderStatusHistoryEntity> historyCaptor =
+                ArgumentCaptor.forClass(OrderStatusHistoryEntity.class);
+        verify(orderStatusHistoryRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getFromStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(historyCaptor.getValue().getToStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(historyCaptor.getValue().getChangedByType()).isEqualTo("SYSTEM");
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo("PROPOSAL_APPLIED");
+
+        verify(orderEventOutboxWriter).saveOrderProposalApplied(
+                order,
+                proposal,
+                "calc-1",
+                itemsCaptor.getValue(),
+                result.changedAt()
+        );
+    }
+
+    @Test
+    void applyProposalUpdate_rejectsUnknownProduct() {
+        UUID id = UUID.randomUUID();
+        UUID proposalId = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(proposalId)
+                .orderId(id)
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\"}]")
+                .status(ProposalStatus.ACCEPTED)
+                .build();
+        when(orderRepository.findById(id)).thenReturn(Optional.of(order));
+        when(orderProposalRepository.findById(proposalId)).thenReturn(Optional.of(proposal));
+        when(orderItemRepository.findByOrderIdOrderByLineNumberAsc(id)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.applyProposalUpdateWithoutRedisUpdate(
+                id.toString(),
+                updateAfterProposalRequest(proposalId)
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("p1");
+
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderEventOutboxWriter, never()).saveOrderProposalApplied(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateApplyProposalRedisViews_loadsOrderAndCallsUpdater() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.CONFIRMED);
+        when(orderRepository.findById(id)).thenReturn(Optional.of(order));
+
+        service.updateApplyProposalRedisViews(id.toString(), "idem-1");
+
+        verify(orderApplyProposalRedisUpdater).apply(order, "idem-1");
+    }
+
     private OrderEntity order(UUID id, OrderStatus status) {
         return order(id, status, null);
+    }
+
+    private UpdateAfterProposalRequest updateAfterProposalRequest(UUID proposalId) {
+        return new UpdateAfterProposalRequest(
+                proposalId,
+                "calc-1",
+                "UZS",
+                new BigDecimal("10000.00"),
+                new BigDecimal("1000.00"),
+                new BigDecimal("500.00"),
+                new BigDecimal("3000.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                new BigDecimal("11500.00"),
+                List.of("PROMO500"),
+                List.of(new UpdateAfterProposalItemRequest(
+                        "p1",
+                        new BigDecimal("1.000"),
+                        ProductUnit.KG,
+                        new BigDecimal("10000.00"),
+                        new BigDecimal("10000.00"),
+                        new BigDecimal("1000.00"),
+                        new BigDecimal("9000.00")
+                ))
+        );
+    }
+
+    private OrderItemEntity orderItem(UUID orderId, String productId, String productName) {
+        return OrderItemEntity.builder()
+                .id(UUID.randomUUID())
+                .orderId(orderId)
+                .lineNumber(1)
+                .productId(productId)
+                .productName(productName)
+                .quantity(new BigDecimal("2.000"))
+                .unit(ProductUnit.KG)
+                .unitPriceAmount(new BigDecimal("10000.00"))
+                .grossAmount(new BigDecimal("20000.00"))
+                .discountAmount(BigDecimal.ZERO)
+                .netAmount(new BigDecimal("20000.00"))
+                .imageUrl("https://cdn.test/p1.png")
+                .createdAt(OffsetDateTime.now())
+                .build();
     }
 
     private OrderEntity order(UUID id, OrderStatus status, String driverId) {

@@ -137,6 +137,51 @@ public class OrderRedisConfig {
     }
 
     /**
+     * Cache 2 + Cache 8 + Cache 4 + Cache 6 -- atomic proposal application.
+     *
+     * Deletes the stale order snapshot and active proposal, updates the current
+     * status back to CONFIRMED, and removes proposal-wait timeline entries from
+     * C6. Cache 2 is deleted because proposal application changes totals/items
+     * and the next read must rebuild the snapshot from PostgreSQL.
+     *
+     * KEYS[1] = order:{orderId}             (C2)
+     * KEYS[2] = order:proposals:{orderId}   (C8)
+     * KEYS[3] = order:status:{orderId}      (C4)
+     * KEYS[4] = order:timeline:{orderId}    (C6)
+     * ARGV[1] = status value (C4 value: "CONFIRMED|userId|storeId")
+     * ARGV[2] = C4 TTL seconds
+     * ARGV[3] = C6 TTL seconds
+     * ARGV[4] = timeline status to remove ("AWAITING_CUSTOMER_RESPONSE")
+     * Returns: 1 always.
+     */
+    @Bean
+    public RedisScript<Long> applyProposalRedisUpdateScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(
+                "redis.call('del', KEYS[1], KEYS[2]) " +
+                "redis.call('set', KEYS[3], ARGV[1], 'ex', tonumber(ARGV[2])) " +
+                "local entries = redis.call('lrange', KEYS[4], 0, -1) " +
+                "redis.call('del', KEYS[4]) " +
+                "for _, entry in ipairs(entries) do " +
+                "  local keep = true " +
+                "  local ok, decoded = pcall(cjson.decode, entry) " +
+                "  if ok and decoded['status'] == ARGV[4] then " +
+                "    keep = false " +
+                "  end " +
+                "  if keep then " +
+                "    redis.call('rpush', KEYS[4], entry) " +
+                "  end " +
+                "end " +
+                "if redis.call('llen', KEYS[4]) > 0 then " +
+                "  redis.call('expire', KEYS[4], tonumber(ARGV[3])) " +
+                "end " +
+                "return 1"
+        );
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
      * Cache 1c + Cache 1 + Cache 1b + Cache 4 -- atomic scheduled activation.
      *
      * Moves a scheduled order into the active order sets and updates the status

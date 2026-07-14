@@ -2,15 +2,19 @@ package com.sebet.order_service.internal.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.internal.dto.request.SystemCancelOrderRequest;
+import com.sebet.order_service.internal.dto.request.UpdateAfterProposalItemRequest;
+import com.sebet.order_service.internal.dto.request.UpdateAfterProposalRequest;
 import com.sebet.order_service.internal.dto.response.ActivateScheduledOrderResponse;
 import com.sebet.order_service.internal.dto.response.CancelActiveProposalResponse;
 import com.sebet.order_service.internal.dto.response.CancelProposalResponse;
 import com.sebet.order_service.internal.dto.response.SystemCancelOrderResponse;
+import com.sebet.order_service.internal.dto.response.UpdateAfterProposalResponse;
 import com.sebet.order_service.order.service.OrderLifecycleResult;
 import com.sebet.order_service.order.service.OrderLifecycleService;
 import com.sebet.order_service.persistence.entity.OrderEntity;
 import com.sebet.order_service.shared.enums.OrderCancellationReason;
 import com.sebet.order_service.shared.enums.OrderStatus;
+import com.sebet.order_service.shared.enums.ProductUnit;
 import com.sebet.order_service.shared.enums.ScheduleType;
 import com.sebet.order_service.shared.idempotency.IdempotentCommandService;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +22,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.function.Supplier;
 import java.util.UUID;
 
@@ -313,6 +318,60 @@ class InternalOrderLifecycleServiceTest {
     }
 
     @Test
+    void updateAfterProposal_recordsIdempotentCommandAndUpdatesRedisWithSameOrder() {
+        UUID id = UUID.randomUUID();
+        UUID proposalId = UUID.randomUUID();
+        OrderEntity order = order(id);
+        OffsetDateTime changedAt = OffsetDateTime.parse("2026-07-10T10:00:00Z");
+        UpdateAfterProposalRequest request = updateAfterProposalRequest(proposalId);
+        when(orderLifecycleService.applyProposalUpdateWithoutRedisUpdate(id.toString(), request))
+                .thenReturn(new OrderLifecycleResult(
+                        order,
+                        OrderStatus.AWAITING_CUSTOMER_RESPONSE,
+                        OrderStatus.CONFIRMED,
+                        changedAt
+                ));
+
+        UpdateAfterProposalResponse response = service.updateAfterProposal(id.toString(), request, "idem-1");
+
+        assertThat(response.orderId()).isEqualTo(id.toString());
+        assertThat(response.status()).isEqualTo("CONFIRMED");
+        assertThat(response.proposalId()).isEqualTo(proposalId.toString());
+        assertThat(response.appliedAt()).isEqualTo("2026-07-10T10:00Z");
+        verify(idempotentCommandService).execute(
+                eq(OrderLifecycleService.INTERNAL_UPDATE_AFTER_PROPOSAL_ACTION),
+                eq("idem-1"),
+                eq(id.toString()),
+                anyString(),
+                eq(UpdateAfterProposalResponse.class),
+                any()
+        );
+        verify(orderLifecycleService).updateApplyProposalRedisViews(order, "idem-1");
+        verify(orderLifecycleService, never()).updateApplyProposalRedisViews(id.toString(), "idem-1");
+    }
+
+    @Test
+    void updateAfterProposal_retriesRedisUpdateFromDatabaseWhenIdempotencyRecordExists() {
+        UUID id = UUID.randomUUID();
+        UUID proposalId = UUID.randomUUID();
+        UpdateAfterProposalRequest request = updateAfterProposalRequest(proposalId);
+        UpdateAfterProposalResponse stored = new UpdateAfterProposalResponse(
+                id.toString(),
+                "CONFIRMED",
+                proposalId.toString(),
+                "2026-07-10T10:00Z"
+        );
+        when(idempotentCommandService.execute(anyString(), eq("idem-1"), eq(id.toString()), anyString(), any(), any()))
+                .thenReturn(stored);
+
+        UpdateAfterProposalResponse response = service.updateAfterProposal(id.toString(), request, "idem-1");
+
+        assertThat(response).isEqualTo(stored);
+        verify(orderLifecycleService, never()).applyProposalUpdateWithoutRedisUpdate(anyString(), any());
+        verify(orderLifecycleService).updateApplyProposalRedisViews(id.toString(), "idem-1");
+    }
+
+    @Test
     void systemCancel_rejectsUnsupportedReason() {
         assertThatThrownBy(() -> service.systemCancel(
                 UUID.randomUUID().toString(),
@@ -346,5 +405,30 @@ class InternalOrderLifecycleServiceTest {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
+    }
+
+    private UpdateAfterProposalRequest updateAfterProposalRequest(UUID proposalId) {
+        return new UpdateAfterProposalRequest(
+                proposalId,
+                "calc-1",
+                "UZS",
+                new BigDecimal("10000.00"),
+                new BigDecimal("1000.00"),
+                new BigDecimal("500.00"),
+                new BigDecimal("3000.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                new BigDecimal("11500.00"),
+                List.of("PROMO500"),
+                List.of(new UpdateAfterProposalItemRequest(
+                        "p1",
+                        new BigDecimal("1.000"),
+                        ProductUnit.KG,
+                        new BigDecimal("10000.00"),
+                        new BigDecimal("10000.00"),
+                        new BigDecimal("1000.00"),
+                        new BigDecimal("9000.00")
+                ))
+        );
     }
 }

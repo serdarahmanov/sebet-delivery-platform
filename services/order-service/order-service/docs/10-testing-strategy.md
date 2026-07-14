@@ -104,6 +104,7 @@ Compile without running tests:
 - verification code generation, C7 write, and DB metadata persistence
 - verification code validation against C7 with DB fallback
 - `VerificationCodeNotFoundException` on missing code in both stores
+- promo-service `update-after-proposal` application, including final repriced item replacement, proposal `APPLIED` marking, idempotent replay Redis refresh, C2/C8/C4/C6 Redis updater behavior, and `OrderProposalApplied` outbox event payload writing
 
 ## Unit Tests To Add
 

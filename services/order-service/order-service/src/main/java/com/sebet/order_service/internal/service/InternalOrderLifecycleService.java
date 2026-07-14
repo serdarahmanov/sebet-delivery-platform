@@ -3,10 +3,12 @@ package com.sebet.order_service.internal.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sebet.order_service.internal.dto.request.SystemCancelOrderRequest;
+import com.sebet.order_service.internal.dto.request.UpdateAfterProposalRequest;
 import com.sebet.order_service.internal.dto.response.ActivateScheduledOrderResponse;
 import com.sebet.order_service.internal.dto.response.CancelActiveProposalResponse;
 import com.sebet.order_service.internal.dto.response.CancelProposalResponse;
 import com.sebet.order_service.internal.dto.response.SystemCancelOrderResponse;
+import com.sebet.order_service.internal.dto.response.UpdateAfterProposalResponse;
 import com.sebet.order_service.order.service.OrderLifecycleResult;
 import com.sebet.order_service.order.service.OrderLifecycleService;
 import com.sebet.order_service.persistence.entity.OrderEntity;
@@ -33,6 +35,8 @@ public class InternalOrderLifecycleService {
             OrderLifecycleService.INTERNAL_CANCEL_ACTIVE_PROPOSAL_ACTION;
     private static final String CANCEL_PROPOSAL_AND_ORDER_ACTION =
             OrderLifecycleService.INTERNAL_CANCEL_PROPOSAL_AND_ORDER_ACTION;
+    private static final String UPDATE_AFTER_PROPOSAL_ACTION =
+            OrderLifecycleService.INTERNAL_UPDATE_AFTER_PROPOSAL_ACTION;
     private static final EnumSet<OrderCancellationReason> SYSTEM_CANCEL_REASONS = EnumSet.of(
             OrderCancellationReason.PAYMENT_FAILED,
             OrderCancellationReason.NO_RIDERS_AVAILABLE,
@@ -225,6 +229,40 @@ public class InternalOrderLifecycleService {
         return response;
     }
 
+    public UpdateAfterProposalResponse updateAfterProposal(
+            String orderId,
+            UpdateAfterProposalRequest request,
+            String idempotencyKey
+    ) {
+        AtomicReference<OrderEntity> updatedOrder = new AtomicReference<>();
+
+        UpdateAfterProposalResponse response = idempotentCommandService.execute(
+                UPDATE_AFTER_PROPOSAL_ACTION,
+                idempotencyKey,
+                orderId,
+                requestHash(orderId, request),
+                UpdateAfterProposalResponse.class,
+                () -> {
+                    OrderLifecycleResult result =
+                            orderLifecycleService.applyProposalUpdateWithoutRedisUpdate(orderId, request);
+                    updatedOrder.set(result.order());
+                    return new UpdateAfterProposalResponse(
+                            orderId,
+                            result.newStatus().name(),
+                            request.proposalId().toString(),
+                            result.changedAt().toString()
+                    );
+                }
+        );
+
+        if (updatedOrder.get() != null) {
+            orderLifecycleService.updateApplyProposalRedisViews(updatedOrder.get(), idempotencyKey);
+        } else {
+            orderLifecycleService.updateApplyProposalRedisViews(orderId, idempotencyKey);
+        }
+        return response;
+    }
+
     private OrderCancellationReason parseSystemCancellationReason(SystemCancelOrderRequest request) {
         if (request == null || request.reason() == null || request.reason().isBlank()) {
             throw new IllegalArgumentException("reason is required");
@@ -246,6 +284,14 @@ public class InternalOrderLifecycleService {
             return objectMapper.writeValueAsString(metadata);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to serialize internal order lifecycle metadata", exception);
+        }
+    }
+
+    private String requestHash(String orderId, UpdateAfterProposalRequest request) {
+        try {
+            return "orderId=" + orderId + ";request=" + objectMapper.writeValueAsString(request);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to serialize update-after-proposal request", exception);
         }
     }
 

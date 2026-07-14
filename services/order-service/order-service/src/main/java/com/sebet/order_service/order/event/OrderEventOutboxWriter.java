@@ -40,6 +40,7 @@ public class OrderEventOutboxWriter {
     private static final String ORDER_CACHE_EVICTION_REQUESTED = "OrderCacheEvictionRequested";
     private static final String ORDER_PROPOSED_TO_CUSTOMER = "OrderProposedToCustomer";
     private static final String ORDER_PROPOSAL_ACCEPTED = "OrderProposalAccepted";
+    private static final String ORDER_PROPOSAL_APPLIED = "OrderProposalApplied";
     private static final String ORDER_SCHEDULED_UPDATED = "OrderScheduledUpdated";
 
     private final OutboxEventRepository outboxEventRepository;
@@ -142,6 +143,47 @@ public class OrderEventOutboxWriter {
                 iso(respondedAt)
         );
         saveEvent(order, ORDER_PROPOSAL_ACCEPTED, respondedAt, data);
+    }
+
+    public void saveOrderProposalApplied(
+            OrderEntity order,
+            OrderProposalEntity proposal,
+            String promoCalculationId,
+            List<OrderItemEntity> finalItems,
+            OffsetDateTime appliedAt
+    ) {
+        List<OrderProposalAppliedEventData.ItemData> itemData = finalItems.stream()
+                .map(item -> new OrderProposalAppliedEventData.ItemData(
+                        item.getProductId(),
+                        item.getProductName(),
+                        item.getQuantity(),
+                        item.getUnit().name(),
+                        item.getUnitPriceAmount(),
+                        item.getGrossAmount(),
+                        item.getDiscountAmount(),
+                        item.getNetAmount()
+                ))
+                .toList();
+
+        OrderProposalAppliedEventData data = new OrderProposalAppliedEventData(
+                order.getId().toString(),
+                order.getCustomerId(),
+                order.getStoreId(),
+                proposal.getId().toString(),
+                promoCalculationId,
+                order.getSubtotalAmount(),
+                order.getItemDiscountAmount(),
+                order.getOrderDiscountAmount(),
+                order.getDeliveryFeeAmount(),
+                order.getServiceFeeAmount(),
+                order.getSmallOrderFeeAmount(),
+                order.getTotalAmount(),
+                order.getCurrency(),
+                order.getSelectedPromoCodes(),
+                itemData,
+                iso(appliedAt)
+        );
+        saveEvent(order, ORDER_PROPOSAL_APPLIED, appliedAt, data);
     }
 
     public void saveScheduledOrderUpdated(
