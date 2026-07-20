@@ -1094,9 +1094,10 @@ class OrderLifecycleServiceTest {
                 .storeId("store-1")
                 .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
                 .itemsJson("[{\"productId\":\"p1\"}]")
+                .status(ProposalStatus.ACTIVE)
                 .build();
         when(orderRepository.findById(id)).thenReturn(Optional.of(order));
-        when(orderProposalRepository.findByOrderId(id)).thenReturn(Optional.of(proposal));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)).thenReturn(Optional.of(proposal));
         when(orderRepository.saveAndFlush(order)).thenReturn(order);
         when(orderProposalRepository.saveAndFlush(proposal)).thenReturn(proposal);
 
@@ -1138,9 +1139,10 @@ class OrderLifecycleServiceTest {
                 .storeId("store-1")
                 .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
                 .itemsJson("[{\"productId\":\"p1\"}]")
+                .status(ProposalStatus.ACTIVE)
                 .build();
         when(orderRepository.findByIdAndStoreId(id, "store-1")).thenReturn(Optional.of(order));
-        when(orderProposalRepository.findByOrderId(id)).thenReturn(Optional.of(proposal));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)).thenReturn(Optional.of(proposal));
         when(orderRepository.saveAndFlush(order)).thenReturn(order);
         when(orderProposalRepository.saveAndFlush(proposal)).thenReturn(proposal);
 
@@ -1177,7 +1179,7 @@ class OrderLifecycleServiceTest {
         assertThatThrownBy(() -> service.storeCancelActiveProposalWithoutRedisUpdate(id.toString(), "store-2"))
                 .isInstanceOf(OrderNotFoundException.class);
 
-        verify(orderProposalRepository, never()).findByOrderId(any());
+        verify(orderProposalRepository, never()).findByOrderIdAndStatus(any(), any());
         verify(orderRepository, never()).saveAndFlush(any());
     }
 
@@ -1189,7 +1191,7 @@ class OrderLifecycleServiceTest {
         assertThatThrownBy(() -> service.cancelActiveProposalWithoutRedisUpdate(id.toString()))
                 .isInstanceOf(OrderInvalidTransitionException.class);
 
-        verify(orderProposalRepository, never()).findByOrderId(any());
+        verify(orderProposalRepository, never()).findByOrderIdAndStatus(any(), any());
         verify(orderRepository, never()).saveAndFlush(any());
     }
 
@@ -1197,12 +1199,26 @@ class OrderLifecycleServiceTest {
     void cancelActiveProposal_throwsNotFoundWhenProposalMissing() {
         UUID id = UUID.randomUUID();
         when(orderRepository.findById(id)).thenReturn(Optional.of(order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE)));
-        when(orderProposalRepository.findByOrderId(id)).thenReturn(Optional.empty());
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.cancelActiveProposalWithoutRedisUpdate(id.toString()))
                 .isInstanceOf(OrderNotFoundException.class);
 
         verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void cancelActiveProposal_doesNotCancelAProposalTheCustomerAlreadyAccepted() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findById(id)).thenReturn(Optional.of(order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE)));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.cancelActiveProposalWithoutRedisUpdate(id.toString()))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderProposalRepository, never()).findByOrderId(any());
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderProposalRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -1215,9 +1231,10 @@ class OrderLifecycleServiceTest {
                 .storeId("store-1")
                 .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
                 .itemsJson("[{\"productId\":\"p1\"}]")
+                .status(ProposalStatus.ACTIVE)
                 .build();
         when(orderRepository.findById(id)).thenReturn(Optional.of(order));
-        when(orderProposalRepository.findByOrderId(id)).thenReturn(Optional.of(proposal));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)).thenReturn(Optional.of(proposal));
         when(orderRepository.saveAndFlush(order)).thenReturn(order);
         when(orderProposalRepository.saveAndFlush(proposal)).thenReturn(proposal);
 
@@ -1268,12 +1285,26 @@ class OrderLifecycleServiceTest {
     void cancelProposalAndOrder_throwsNotFoundWhenProposalMissing() {
         UUID id = UUID.randomUUID();
         when(orderRepository.findById(id)).thenReturn(Optional.of(order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE)));
-        when(orderProposalRepository.findByOrderId(id)).thenReturn(Optional.empty());
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.cancelProposalAndOrderWithoutRedisUpdate(id.toString()))
                 .isInstanceOf(OrderNotFoundException.class);
 
         verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void cancelProposalAndOrder_doesNotTimeOutAProposalTheCustomerAlreadyAccepted() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findById(id)).thenReturn(Optional.of(order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE)));
+        when(orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.cancelProposalAndOrderWithoutRedisUpdate(id.toString()))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderProposalRepository, never()).findByOrderId(any());
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(orderProposalRepository, never()).saveAndFlush(any());
     }
 
     @Test

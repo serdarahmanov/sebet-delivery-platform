@@ -25,6 +25,7 @@ Implemented in `shared/exception/ErrorResponse.java` (Java record). MVC intercep
 | `ConstraintViolationException` | 400 | `VALIDATION_ERROR` |
 | `HttpMessageNotReadableException` | 400 | `MALFORMED_REQUEST` |
 | `MissingRequestHeaderException` | 400 | `MISSING_HEADER` |
+| `InvalidScheduledWindowException` | 400 | `INVALID_SCHEDULED_WINDOW` |
 | `NoResourceFoundException` | 404 | `NOT_FOUND` |
 | `OrderNotFoundException` | 404 | `ORDER_NOT_FOUND` |
 | `DriverNotAssignedException` | 403 | `DRIVER_NOT_ASSIGNED` |
@@ -33,6 +34,7 @@ Implemented in `shared/exception/ErrorResponse.java` (Java record). MVC intercep
 | `IdempotencyKeyConflictException` | 409 | `IDEMPOTENCY_KEY_CONFLICT` |
 | `IdempotencyRequestInProgressException` | 409 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` |
 | `OptimisticLockingFailureException` | 409 | `ORDER_INVALID_TRANSITION` |
+| `ScheduledOrderModificationWindowClosedException` | 409 | `MODIFICATION_WINDOW_CLOSED` |
 | `CacheInvalidationFailedException` | 503 | `CACHE_INVALIDATION_FAILED` |
 | `UnsupportedOperationException` | 501 | `NOT_IMPLEMENTED` |
 | `Exception` (fallback) | 500 | `INTERNAL_ERROR` |

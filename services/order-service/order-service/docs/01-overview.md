@@ -8,46 +8,21 @@ It receives checkout events, creates orders, exposes customer and store order AP
 
 ## Current Implementation Stage
 
-Implemented:
+Customer, store, driver, and internal REST write/read endpoints, checkout
+event ingestion, Redis hot-view read/write paths, the outbox/cache-eviction
+pattern, and the scheduled-order-activation and proposal-timeout background
+jobs are implemented. See `docs/13-implementation-gaps.md` for the
+authoritative, per-area breakdown of what is implemented versus pending — this
+section intentionally does not duplicate that list to avoid drifting out of
+sync with it.
 
-- customer and store REST controllers
-- request and response DTOs
-- order lifecycle enums
-- Redis DTOs
-- Redis key registry
-- Redis repository classes
-- MVC interceptors for `X-User-Id`, `X-Store-Id`, `X-Driver-Id`, and `X-Internal-Key`
-- PostgreSQL order, item, and status-history entities
-- Spring Data JPA repositories
-- Flyway migration for durable order tables
-- internal order creation service
-- checkout confirmed event DTOs
-- checkout event to order creation command mapper
-- checkout event Kafka consumer
-- checkout event retry and dead-letter handling
-- Redis lock for checkout order creation
-- Redis hot-view writes during checkout order creation
-- customer read service methods
-- store read service methods
-- first store lifecycle write endpoints: accept, reject, and ready
-- driver detail and lifecycle endpoints: detail, pickup, arrive, complete, and decline
-- internal driver assignment endpoints: assign, replace, and unassign
-- order event outbox writes for Debezium publishing
-- idempotent driver assignment, decline, and store cancel writes
-- deliberate Redis C2 eviction fallback events and consumer
-- repository, order creation, and Kafka listener integration tests
-- global exception handler for controller-handled exceptions
-- input validation for amount fields and delivery address JSON
+Notable remaining gaps as of this writing:
 
-Pending:
-
-- customer write service methods
-- remaining store write service methods
-- remaining internal service methods
-- Debezium connector deployment/runtime wiring for publishing outbox events
+- Debezium connector deployment/runtime wiring for publishing outbox events (external to this service; see `docs/14-debezium-outbox.md`)
 - delivery-arrival Kafka consumer
 - WebSocket/STOMP broker configuration
-- background jobs
+- store response timeout background job
+- deployment wiring (Dockerfile, compose, k8s/Helm, health probes)
 
 ## Users
 

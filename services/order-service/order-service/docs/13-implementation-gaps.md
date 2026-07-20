@@ -95,6 +95,12 @@ Implemented:
   - cancellation reason is fixed to `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`
   - reserves the idempotency key, appends status history, emits `OrderCancelled`, and stores the completed idempotent response
   - after commit and on idempotent replay, Redis cleanup uses `CANCELLED_ORDER_HOT_VIEWS` (C1, C1b, C2, C3, C4, C6, C8) through the recoverable eviction fallback pattern
+- `ProposalTimeoutScheduler` implements automatic proposal timeout cancellation:
+  - scans `AWAITING_CUSTOMER_RESPONSE` orders whose `updatedAt` (set to `proposedAt` on entry to that status) is older than the env-configured response window
+  - cancels in env-configured batches on an env-configured interval/initial delay by calling the same `cancelProposalAndOrderWithoutRedisUpdate` transition used by the manual `cancel-proposal-and-order` endpoint, then evicts Redis hot views with a synthetic `proposal-timeout:{orderId}` key
+  - uses PostgreSQL-backed ShedLock so multiple replicas do not run the job concurrently
+  - relies on the `AWAITING_CUSTOMER_RESPONSE` status guard for idempotency across runs rather than the REST `Idempotency-Key`/`IdempotentCommandService` layer, matching the pattern used by `ScheduledOrderActivationScheduler`
+  - a failure cancelling one order does not block the rest of the batch; a Redis eviction failure after a successful DB cancellation still counts as cancelled and only logs a warning (stale Redis views self-heal via TTL/read-repair or the `OrderCacheEvictionRequested` outbox fallback on Redis connection/timeout failures — there is no repair job yet for the narrow crash window between DB commit and Redis eviction)
 - Any cancellation applied to an order in `AWAITING_CUSTOMER_RESPONSE` (system-cancel, admin-cancel, store cancel) marks the active proposal row as `SYSTEM_CANCELLED` or `STORE_CANCELLED` within the same database transaction.
 - `ProposalStatus` enum tracks the full proposal lifecycle: `ACTIVE`, `ACCEPTED`, `APPLIED`, `REJECTED`, `CANCELLED`, `TIMED_OUT`, `SYSTEM_CANCELLED`, `STORE_CANCELLED`.
 - `order_proposals.uq_order_proposals_order_id` unique constraint replaced by a partial unique index (`WHERE status = 'ACTIVE'`) to allow historical proposal rows while enforcing at most one active proposal per order.
@@ -198,10 +204,10 @@ Implemented:
 - REST idempotent command cleanup scheduler (`scheduled/idempotency/IdempotentCommandCleanupScheduler`)
 - checkout processed-event cleanup scheduler (`scheduled/checkout/ProcessedEventCleanupScheduler`)
 - scheduled order activation scheduler (`scheduled/order/ScheduledOrderActivationScheduler`)
+- proposal timeout scheduler (`scheduled/proposal/ProposalTimeoutScheduler`)
 
 Pending:
 
-- proposal timeout job
 - store response timeout job if needed
 
 ## WebSocket

@@ -177,6 +177,11 @@ OrderReadyForPickup
 OrderPickedUp
 OrderArrived
 OrderDelivered
+OrderProposedToCustomer
+OrderProposalAccepted
+OrderProposalApplied
+OrderActiveProposalCancelled
+OrderScheduledUpdated
 DriverAssigned
 DriverReplaced
 DriverUnassigned

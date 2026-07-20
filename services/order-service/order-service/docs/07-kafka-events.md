@@ -28,6 +28,8 @@
 | `order-events` | `OrderProposedToCustomer` | after the store proposes item changes to the customer |
 | `order-events` | `OrderProposalAccepted` | after the customer accepts the store's change proposal (ACCEPT_ALL or ACCEPT_WITH_MODIFICATIONS); promo service recalculates discounts |
 | `order-events` | `OrderProposalApplied` | after promo service callback applies recalculated proposal totals/items and the order returns to `CONFIRMED` |
+| `order-events` | `OrderActiveProposalCancelled` | after a store/internal caller withdraws an active proposal without cancelling the order (`cancel-active-proposal`); order returns to `CONFIRMED` |
+| `order-events` | `OrderScheduledUpdated` | after a customer updates a scheduled order's delivery time, address, and/or phone number |
 | `order-events` | `OrderCacheEvictionRequested` | after direct Redis hot-view eviction fails because Redis is unavailable or the Redis result is unknown |
 
 Order-service records produced events in the local `outbox_event` table. Debezium

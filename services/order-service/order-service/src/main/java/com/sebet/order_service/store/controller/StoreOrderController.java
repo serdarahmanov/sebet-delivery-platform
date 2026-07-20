@@ -44,8 +44,10 @@ import java.util.List;
  *
  * ── Pending (not yet implemented) ───────────────────────────────────────────
  *   WebSocket push for live status transitions on the kitchen dashboard.
- *   Store/customer response timeout jobs.
- *   AWAITING_CUSTOMER_RESPONSE timeout job → CANCELLED (AWAITING_CUSTOMER_RESPONSE_TIMEOUT).
+ *   Store response timeout job (PENDING order ignored by the store).
+ *   (Customer response timeout is already automated by ProposalTimeoutScheduler,
+ *   which cancels AWAITING_CUSTOMER_RESPONSE orders with reason
+ *   AWAITING_CUSTOMER_RESPONSE_TIMEOUT.)
  */
 @RestController
 @RequestMapping("/api/v1/store/orders")

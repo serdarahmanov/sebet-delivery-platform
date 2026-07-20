@@ -54,6 +54,7 @@ class OrderEventOutboxWriterTest {
         List<TransitionCase> cases = List.of(
                 new TransitionCase(OrderStatus.SCHEDULED, OrderStatus.PENDING, "OrderActivated"),
                 new TransitionCase(OrderStatus.PENDING, OrderStatus.CONFIRMED, "OrderAccepted"),
+                new TransitionCase(OrderStatus.AWAITING_CUSTOMER_RESPONSE, OrderStatus.CONFIRMED, "OrderActiveProposalCancelled"),
                 new TransitionCase(OrderStatus.PENDING, OrderStatus.CANCELLED, "OrderCancelled"),
                 new TransitionCase(OrderStatus.CONFIRMED, OrderStatus.READY_FOR_PICKUP, "OrderReadyForPickup"),
                 new TransitionCase(OrderStatus.READY_FOR_PICKUP, OrderStatus.OUT_FOR_DELIVERY, "OrderPickedUp"),

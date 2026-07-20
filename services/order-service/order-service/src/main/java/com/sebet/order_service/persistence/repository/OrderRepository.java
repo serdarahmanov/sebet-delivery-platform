@@ -48,4 +48,10 @@ public interface OrderRepository extends JpaRepository<OrderEntity, UUID> {
             OffsetDateTime scheduledFor,
             Pageable pageable
     );
+
+    List<OrderEntity> findByStatusAndUpdatedAtLessThanEqualOrderByUpdatedAtAsc(
+            OrderStatus status,
+            OffsetDateTime updatedAt,
+            Pageable pageable
+    );
 }

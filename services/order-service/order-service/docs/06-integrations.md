@@ -106,10 +106,14 @@ POST /api/v1/internal/orders/{orderId}/cancel-proposal-and-order
 `activate-scheduled` is a manual admin/support override and requires `Idempotency-Key`.
 The automatic scheduled-order transition job is implemented separately. It
 activates only `SCHEDULED` orders whose `scheduledFor` is within the configured
-lead-time window. ShedLock uses PostgreSQL to ensure only one service replica
-runs the scheduled activation job at a time. The REST idempotent command cleanup
-and processed checkout event cleanup schedulers use the same PostgreSQL-backed
-lock pattern to avoid duplicate cleanup work across replicas.
+lead-time window. `cancel-proposal-and-order` is likewise available as a manual
+internal transition, with a separate automatic `ProposalTimeoutScheduler` job
+that cancels `AWAITING_CUSTOMER_RESPONSE` orders once the configured customer
+response window has elapsed. ShedLock uses PostgreSQL to ensure only one service
+replica runs the scheduled activation job or the proposal timeout job at a time.
+The REST idempotent command cleanup and processed checkout event cleanup
+schedulers use the same PostgreSQL-backed lock pattern to avoid duplicate
+cleanup work across replicas.
 
 `system-cancel` requires `Idempotency-Key` and accepts only system-owned reasons:
 `PAYMENT_FAILED`, `NO_RIDERS_AVAILABLE`, `STORE_RESPONSE_TIMEOUT`,
@@ -147,4 +151,4 @@ Store clients use:
 
 ## Integration Status
 
-The checkout event consumer and Redis hot-view write-through path are implemented. Customer read and write services are implemented. Store read services are implemented. Store `accept`, `reject`, `ready`, `cancel`, `propose-changes`, and `cancel-active-proposal` actions are implemented through the shared lifecycle service. Store `/cancel`, `/propose-changes`, and `/cancel-active-proposal` require `Idempotency-Key` and use recoverable Redis hot-view update or eviction patterns after the database transaction. Driver detail and lifecycle actions (`detail`, `pickup`, `arrive`, `complete`, `decline`) are implemented through `DriverOrderLifecycleService`. Internal driver assignment actions (`assign-driver`, `unassign-driver`) are implemented through `InternalDriverAssignmentService`; internal lifecycle actions (`activate-scheduled`, `system-cancel`, `admin-cancel`, `cancel-active-proposal`, `cancel-proposal-and-order`, `update-after-proposal`) are implemented through `InternalOrderLifecycleService` and require `Idempotency-Key`. Automatic scheduled-order activation is implemented through `ScheduledOrderActivationScheduler` and guarded by PostgreSQL-backed ShedLock. Order-created, lifecycle, proposal, and driver-assignment business events are written to `outbox_event` for Debezium publishing. Deliberate `OrderCacheEvictionRequested` events can also be consumed back by order-service to repair Redis hot views after recoverable Redis direct-update failures. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. Delivery tracking integration, deployment wiring, timeout jobs, and WebSocket broker are pending.
+The checkout event consumer and Redis hot-view write-through path are implemented. Customer read and write services are implemented. Store read services are implemented. Store `accept`, `reject`, `ready`, `cancel`, `propose-changes`, and `cancel-active-proposal` actions are implemented through the shared lifecycle service. Store `/cancel`, `/propose-changes`, and `/cancel-active-proposal` require `Idempotency-Key` and use recoverable Redis hot-view update or eviction patterns after the database transaction. Driver detail and lifecycle actions (`detail`, `pickup`, `arrive`, `complete`, `decline`) are implemented through `DriverOrderLifecycleService`. Internal driver assignment actions (`assign-driver`, `unassign-driver`) are implemented through `InternalDriverAssignmentService`; internal lifecycle actions (`activate-scheduled`, `system-cancel`, `admin-cancel`, `cancel-active-proposal`, `cancel-proposal-and-order`, `update-after-proposal`) are implemented through `InternalOrderLifecycleService` and require `Idempotency-Key`. Automatic scheduled-order activation is implemented through `ScheduledOrderActivationScheduler` and guarded by PostgreSQL-backed ShedLock. Automatic proposal timeout cancellation is implemented through `ProposalTimeoutScheduler` using the same ShedLock pattern. Order-created, lifecycle, proposal, and driver-assignment business events are written to `outbox_event` for Debezium publishing. Deliberate `OrderCacheEvictionRequested` events can also be consumed back by order-service to repair Redis hot views after recoverable Redis direct-update failures. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. Delivery tracking integration, deployment wiring, a store response timeout job, and WebSocket broker are pending.

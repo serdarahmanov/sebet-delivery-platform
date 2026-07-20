@@ -129,19 +129,25 @@ Proposal cancellation has two distinct endpoint families:
 - store/internal `cancel-active-proposal` removes the active proposal without cancelling the order, moves the order back to `CONFIRMED`, deletes C8, updates C4, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 so a corrected proposal can be submitted later.
 - `cancel-proposal-and-order` removes the active proposal and cancels the order.
 
-The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response, proposal cancellation, proposal timeout cancellation, and promo-service proposal application are implemented.
+The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response, proposal cancellation, and promo-service proposal application are implemented.
+
+Proposal timeout cancellation is implemented both as a manual/internal transition and as an automatic job. `ProposalTimeoutScheduler` scans `AWAITING_CUSTOMER_RESPONSE` orders whose proposal has been outstanding longer than the configured response window and cancels them (reason `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`) through the same `cancelProposalAndOrderWithoutRedisUpdate` transition used by the manual `POST /api/v1/internal/orders/{orderId}/cancel-proposal-and-order` endpoint, in env-configured batches on an interval, guarded by PostgreSQL-backed ShedLock so multiple replicas do not run the job concurrently.
 
 ## Cancellation Paths
 
 Implemented cancellation paths:
 
-- store rejects while `PENDING`
-- store cancels after acceptance while `CONFIRMED` or `AWAITING_CUSTOMER_RESPONSE`
+- store rejects while `PENDING` (`POST /api/v1/store/orders/{orderId}/reject`)
+- store cancels after acceptance while `CONFIRMED` or `AWAITING_CUSTOMER_RESPONSE` (`POST /api/v1/store/orders/{orderId}/cancel`)
+- customer cancels while `PENDING`, `CONFIRMED`, or `SCHEDULED`, reason fixed to `USER_REQUESTED` (`POST /api/v1/orders/{orderId}/cancel`)
+- customer rejects a store proposal, cancelling the order (`POST /api/v1/orders/{orderId}/respond-to-changes`, CANCEL_ORDER path)
+- system cancels `PENDING`, `CONFIRMED`, `AWAITING_CUSTOMER_RESPONSE`, `SCHEDULED`, or `READY_FOR_PICKUP` orders for system-owned reasons (`POST /api/v1/internal/orders/{orderId}/system-cancel`)
+- admin override cancellation for any order that is not `DELIVERED` or already `CANCELLED` (`POST /api/v1/internal/orders/{orderId}/admin-cancel`)
+- automatic proposal timeout cancellation when the customer does not respond within the configured response window (`ProposalTimeoutScheduler`, reason `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`)
 
 Planned cancellation paths:
 
-- customer cancels before cutoff
-- system cancels after store/customer timeout
+- system cancels after store response timeout (store ignores a `PENDING` order); `STORE_RESPONSE_TIMEOUT` is already a valid `system-cancel` reason but no automatic job triggers it yet
 - system cancels on unrecoverable processing failure
 
 ## Terminal States

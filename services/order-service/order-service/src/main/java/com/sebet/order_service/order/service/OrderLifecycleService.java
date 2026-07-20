@@ -768,7 +768,7 @@ public class OrderLifecycleService {
             throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.CONFIRMED);
         }
 
-        OrderProposalEntity proposal = orderProposalRepository.findByOrderId(id)
+        OrderProposalEntity proposal = orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
         OffsetDateTime changedAt = OffsetDateTime.now();
@@ -811,7 +811,7 @@ public class OrderLifecycleService {
             throw new OrderInvalidTransitionException(orderId, previousStatus, OrderStatus.CANCELLED);
         }
 
-        OrderProposalEntity proposal = orderProposalRepository.findByOrderId(id)
+        OrderProposalEntity proposal = orderProposalRepository.findByOrderIdAndStatus(id, ProposalStatus.ACTIVE)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
         OffsetDateTime changedAt = OffsetDateTime.now();

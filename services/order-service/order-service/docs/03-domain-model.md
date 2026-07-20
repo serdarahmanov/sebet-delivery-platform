@@ -28,15 +28,13 @@ Current durable tables:
 - `orders`
 - `order_items`
 - `order_status_history`
+- `order_proposals`
 
 `orders.cart_id` is unique so duplicate checkout events for the same cart cannot create duplicate orders.
 
 Not yet durable:
 
-- refund execution details
-- verification code state
-- proposal timestamps
-- delivery assignment details
+- refund execution details (`RefundStatus` is reserved for this but not wired to any durable field yet)
 
 ## Order Item
 
@@ -133,20 +131,21 @@ Scheduled orders are future orders. The activation job moves them from scheduled
 
 ## Proposal
 
-A proposal is created when a store discovers stock issues after accepting an order.
+A proposal is created when a store discovers stock issues after accepting an order. The full flow is implemented:
 
-Planned proposal flow:
+1. Store submits item quantity changes (`POST /api/v1/store/orders/{orderId}/propose-changes`). Order transitions `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE`; a durable `order_proposals` row is created with `status = ACTIVE`; the proposal is cached under `order:proposals:{orderId}` (C8).
+2. Customer responds (`POST /api/v1/orders/{orderId}/respond-to-changes`):
+   - accept (all or with modifications) marks the proposal `ACCEPTED` and emits `OrderProposalAccepted` for promo-service to recalculate pricing; the order stays `AWAITING_CUSTOMER_RESPONSE` until the promo-service callback applies the recalculated totals
+   - cancel marks the proposal `REJECTED` and transitions the order to `CANCELLED`
+3. The promo-service callback (`POST /api/v1/internal/orders/{orderId}/update-after-proposal`) applies the recalculated items/totals, marks the proposal `APPLIED`, and returns the order to `CONFIRMED`; C8 is deleted.
+4. A store/admin can instead withdraw the proposal without cancelling the order (`cancel-active-proposal`, store or internal), which marks it `CANCELLED` and returns the order to `CONFIRMED` so a corrected proposal can be submitted later.
+5. If the customer never responds, `ProposalTimeoutScheduler` automatically cancels the order (`cancel-proposal-and-order` transition, reason `AWAITING_CUSTOMER_RESPONSE_TIMEOUT`) once the configured response window elapses; the proposal is marked `TIMED_OUT`. The same transition is also available as a manual internal endpoint.
 
-1. Store submits item quantity changes.
-2. Order transitions to `AWAITING_CUSTOMER_RESPONSE`.
-3. Proposal is cached under `order:proposals:{orderId}`.
-4. Customer accepts, modifies, or cancels.
-5. Proposal cache is deleted.
-6. Order returns to `CONFIRMED` or transitions to `CANCELLED`.
+`ProposalStatus` tracks the full lifecycle: `ACTIVE`, `ACCEPTED`, `APPLIED`, `REJECTED`, `CANCELLED`, `TIMED_OUT`, `SYSTEM_CANCELLED`, `STORE_CANCELLED`. At most one `ACTIVE` proposal per order is enforced by a partial unique index.
 
 ## Verification Code
 
-The planned delivery verification code is generated when delivery reaches the customer.
+The delivery verification code flow is implemented. A 2-digit code is generated when the driver marks the order `ARRIVED` (`POST /api/v1/driver/orders/{orderId}/arrive`).
 
 Cache key:
 
@@ -154,7 +153,7 @@ Cache key:
 order:verification:{orderId}
 ```
 
-The current code contains the Redis DTO and repository foundation. The delivery-arrival event consumer and driver verification endpoint are pending.
+The code is written to C7 with a 30-minute TTL and also persisted to `order_status_history.metadata_json` as a permanent fallback once C7 expires. The driver submits it via `POST /api/v1/driver/orders/{orderId}/complete`, which validates against C7 first, then the DB fallback. Only the Kafka `order.arrived` delivery-arrival event consumer (a separate concern from verification) is pending.
 
 ## Timeline
 
