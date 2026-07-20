@@ -23,6 +23,8 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 order-service:
+  shedlock:
+    default-lock-at-most-for: ${ORDER_SERVICE_SHEDLOCK_DEFAULT_LOCK_AT_MOST_FOR:PT10M}
   internal:
     secret: ${ORDER_SERVICE_INTERNAL_SECRET:}
   scheduled-order:
@@ -30,6 +32,14 @@ order-service:
     slot-interval-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_SLOT_INTERVAL_MINUTES:15}
     delivery-window-duration-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_DELIVERY_WINDOW_DURATION_MINUTES:30}
     modification-cutoff-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_MODIFICATION_CUTOFF_MINUTES:40}
+    activation-job:
+      enabled: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_ENABLED:true}
+      interval-ms: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_INTERVAL_MS:60000}
+      initial-delay-ms: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_INITIAL_DELAY_MS:30000}
+      lead-time: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_LEAD_TIME:PT30M}
+      batch-size: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_BATCH_SIZE:100}
+      lock-at-most-for: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_LOCK_AT_MOST_FOR:PT5M}
+      lock-at-least-for: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_LOCK_AT_LEAST_FOR:PT0S}
   store-service:
     base-url: ${ORDER_SERVICE_STORE_SERVICE_BASE_URL}
     fallback-open-time: ${ORDER_SERVICE_STORE_SERVICE_FALLBACK_OPEN_TIME:08:00}

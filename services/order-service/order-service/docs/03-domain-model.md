@@ -129,7 +129,7 @@ Examples:
 
 ## Scheduled Order
 
-Scheduled orders are future orders. Planned behavior moves them from scheduled storage into the active queue 30 minutes before the requested delivery window.
+Scheduled orders are future orders. The activation job moves them from scheduled storage into the active queue before the requested delivery window, based on the configured activation lead time.
 
 ## Proposal
 

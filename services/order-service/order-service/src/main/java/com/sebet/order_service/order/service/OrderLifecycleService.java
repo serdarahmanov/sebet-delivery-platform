@@ -55,6 +55,7 @@ public class OrderLifecycleService {
     public static final String STORE_CANCEL_ORDER_ACTION = "STORE_CANCEL_ORDER";
     public static final String STORE_PROPOSE_CHANGES_ACTION = "STORE_PROPOSE_CHANGES";
     public static final String STORE_CANCEL_ACTIVE_PROPOSAL_ACTION = "STORE_CANCEL_ACTIVE_PROPOSAL";
+    public static final String SCHEDULED_ORDER_AUTO_ACTIVATION_ACTION = "SCHEDULED_ORDER_AUTO_ACTIVATION";
     public static final String INTERNAL_ACTIVATE_SCHEDULED_ACTION = "INTERNAL_ACTIVATE_SCHEDULED";
     public static final String INTERNAL_SYSTEM_CANCEL_ACTION = "INTERNAL_SYSTEM_CANCEL";
     public static final String INTERNAL_ADMIN_CANCEL_ACTION = "INTERNAL_ADMIN_CANCEL";
@@ -153,11 +154,20 @@ public class OrderLifecycleService {
             OffsetDateTime changedAt,
             String idempotencyKey
     ) {
+        updateScheduledActivationRedisViews(order, changedAt, INTERNAL_ACTIVATE_SCHEDULED_ACTION, idempotencyKey);
+    }
+
+    public void updateScheduledActivationRedisViews(
+            OrderEntity order,
+            OffsetDateTime changedAt,
+            String sourceAction,
+            String idempotencyKey
+    ) {
         orderLifecycleRedisUpdater.applyTransition(
                 order,
                 OrderStatus.PENDING,
                 changedAt.toString(),
-                INTERNAL_ACTIVATE_SCHEDULED_ACTION,
+                sourceAction,
                 idempotencyKey
         );
     }

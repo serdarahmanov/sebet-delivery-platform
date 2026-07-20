@@ -17,15 +17,27 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 order-service:
+  shedlock:
+    default-lock-at-most-for: ${ORDER_SERVICE_SHEDLOCK_DEFAULT_LOCK_AT_MOST_FOR:PT10M}
   idempotency:
     completed-retention: ${ORDER_SERVICE_IDEMPOTENCY_COMPLETED_RETENTION:PT168H}
     abandoned-in-progress-retention: ${ORDER_SERVICE_IDEMPOTENCY_ABANDONED_IN_PROGRESS_RETENTION:PT1H}
     cleanup-interval-ms: ${ORDER_SERVICE_IDEMPOTENCY_CLEANUP_INTERVAL_MS:600000}
+    cleanup-lock-at-most-for: ${ORDER_SERVICE_IDEMPOTENCY_CLEANUP_LOCK_AT_MOST_FOR:PT5M}
+    cleanup-lock-at-least-for: ${ORDER_SERVICE_IDEMPOTENCY_CLEANUP_LOCK_AT_LEAST_FOR:PT0S}
   scheduled-order:
-    min-lead-time-minutes: 60
-    slot-interval-minutes: 15
-    delivery-window-duration-minutes: 30
-    modification-cutoff-minutes: 40
+    min-lead-time-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_MIN_LEAD_TIME_MINUTES:60}
+    slot-interval-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_SLOT_INTERVAL_MINUTES:15}
+    delivery-window-duration-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_DELIVERY_WINDOW_DURATION_MINUTES:30}
+    modification-cutoff-minutes: ${ORDER_SERVICE_SCHEDULED_ORDER_MODIFICATION_CUTOFF_MINUTES:40}
+    activation-job:
+      enabled: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_ENABLED:false}
+      interval-ms: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_INTERVAL_MS:60000}
+      initial-delay-ms: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_INITIAL_DELAY_MS:30000}
+      lead-time: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_LEAD_TIME:PT30M}
+      batch-size: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_BATCH_SIZE:100}
+      lock-at-most-for: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_LOCK_AT_MOST_FOR:PT5M}
+      lock-at-least-for: ${ORDER_SERVICE_SCHEDULED_ORDER_ACTIVATION_JOB_LOCK_AT_LEAST_FOR:PT0S}
   store-service:
     base-url: http://localhost:8081
     fallback-open-time: "08:00"
@@ -48,6 +60,8 @@ order-service:
         completed-retention: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_COMPLETED_RETENTION:PT168H}
         abandoned-in-progress-retention: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_ABANDONED_IN_PROGRESS_RETENTION:PT1H}
         cleanup-interval-ms: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_CLEANUP_INTERVAL_MS:600000}
+        cleanup-lock-at-most-for: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_CLEANUP_LOCK_AT_MOST_FOR:PT5M}
+        cleanup-lock-at-least-for: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_PROCESSED_EVENTS_CLEANUP_LOCK_AT_LEAST_FOR:PT0S}
       in-progress-retry:
         interval-ms: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_IN_PROGRESS_RETRY_INTERVAL_MS:5000}
         max-attempts: ${ORDER_SERVICE_KAFKA_CHECKOUT_EVENTS_IN_PROGRESS_RETRY_MAX_ATTEMPTS:12}

@@ -117,7 +117,7 @@ Add unit tests for:
 - Redis repository serialization/deserialization
 - active-order removal Lua behavior
 - lock release Lua behavior
-- scheduled and timeout background job behavior when implemented
+- timeout background job behavior when implemented
 - delivery tracking event consumption when implemented
 - `OrderLifecycleRedisUpdater` for `OUT_FOR_DELIVERY`, `ARRIVED`, and `DELIVERED` transitions
 

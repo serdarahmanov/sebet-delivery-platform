@@ -102,11 +102,12 @@ SCHEDULED
   -> PENDING
 ```
 
-Scheduled orders are planned to enter the active queue 30 minutes before their requested delivery time.
-The automatic transition job is still pending and should validate that an order is due before activation.
+Scheduled orders enter the active queue before their requested delivery time.
+The automatic transition job uses the configured activation lead time to find
+due `SCHEDULED` orders and move them to `PENDING`.
 
 The implemented internal `POST /api/v1/internal/orders/{orderId}/activate-scheduled`
-endpoint is a manual admin/support override for `SCHEDULED -> PENDING`, not the automatic scheduler workflow.
+endpoint remains available as a manual admin/support override for `SCHEDULED -> PENDING`.
 
 ## Proposal Flow
 

@@ -44,7 +44,7 @@ import java.util.List;
  *
  * ── Pending (not yet implemented) ───────────────────────────────────────────
  *   WebSocket push for live status transitions on the kitchen dashboard.
- *   Scheduled → PENDING transition job (T-30 min, uses Cache 1c ZRANGEBYSCORE).
+ *   Store/customer response timeout jobs.
  *   AWAITING_CUSTOMER_RESPONSE timeout job → CANCELLED (AWAITING_CUSTOMER_RESPONSE_TIMEOUT).
  */
 @RestController

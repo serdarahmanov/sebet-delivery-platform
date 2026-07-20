@@ -29,7 +29,7 @@ Implemented:
 - Store `OUT_OF_STOCK` rejection validation rejects duplicate product ids and null list elements.
 - Store rejection and cancellation metadata is persisted into `order_status_history.metadata_json`.
 - Store `/cancel` requires `Idempotency-Key`; the key is reserved as `IN_PROGRESS` before business execution, the owning request stores the completed response after the order update and lifecycle outbox event, and idempotent replay reruns Redis cleanup.
-- REST idempotent command cleanup runs through `scheduled/idempotency/IdempotentCommandCleanupScheduler`, deleting old `COMPLETED` rows and abandoned expired `IN_PROGRESS` rows based on environment-backed retention settings.
+- REST idempotent command cleanup runs through `scheduled/idempotency/IdempotentCommandCleanupScheduler`, deleting old `COMPLETED` rows and abandoned expired `IN_PROGRESS` rows based on environment-backed retention settings and PostgreSQL-backed ShedLock.
 - `OrderLifecycleService` implements driver lifecycle transitions:
   - `READY_FOR_PICKUP -> OUT_FOR_DELIVERY` through `POST /api/v1/driver/orders/{orderId}/pickup`
   - `OUT_FOR_DELIVERY -> ARRIVED` through `POST /api/v1/driver/orders/{orderId}/arrive`
@@ -39,6 +39,11 @@ Implemented:
   - activation reserves the idempotency key first, then persists status history, emits `OrderActivated`, and stores the completed idempotent response
   - after commit and on idempotent replay, activation atomically moves Redis hot views from Cache 1c to Cache 1 and Cache 1b and updates Cache 4 through a Lua script
   - recoverable Redis activation-update failures write an `OrderCacheEvictionRequested` event for `SCHEDULED_ACTIVATION_HOT_VIEWS`
+- `ScheduledOrderActivationScheduler` implements automatic scheduled activation:
+  - scans `SCHEDULED` orders whose `scheduledFor` is within the env-configured activation lead time
+  - activates in env-configured batches on an env-configured interval/initial delay
+  - uses PostgreSQL-backed ShedLock so multiple replicas do not run the job concurrently
+  - uses PostgreSQL as the source of truth and applies scheduled-activation Redis hot-view movement after each database transition
 - `OrderLifecycleService` implements internal system cancellation:
   - automated system `PENDING`, `CONFIRMED`, `AWAITING_CUSTOMER_RESPONSE`, `SCHEDULED`, or `READY_FOR_PICKUP` -> `CANCELLED` through `POST /api/v1/internal/orders/{orderId}/system-cancel`
   - admin override cancellation for any non-`DELIVERED` order through `POST /api/v1/internal/orders/{orderId}/admin-cancel`
@@ -174,7 +179,7 @@ Implemented:
 - Redis hot-view initialization for created orders from current database state
 - order-created, lifecycle, and driver-assignment event outbox writes for Debezium publishing
 - cache-eviction projection consumer for deliberate C2 Redis eviction requests from `order-events`
-- processed checkout event cleanup runs through `scheduled/checkout/ProcessedEventCleanupScheduler`, deleting old `COMPLETED` rows and abandoned expired `IN_PROGRESS` rows based on environment-backed retention settings
+- processed checkout event cleanup runs through `scheduled/checkout/ProcessedEventCleanupScheduler`, deleting old `COMPLETED` rows and abandoned expired `IN_PROGRESS` rows based on environment-backed retention settings and PostgreSQL-backed ShedLock.
 
 Pending:
 
@@ -192,10 +197,10 @@ Implemented:
 
 - REST idempotent command cleanup scheduler (`scheduled/idempotency/IdempotentCommandCleanupScheduler`)
 - checkout processed-event cleanup scheduler (`scheduled/checkout/ProcessedEventCleanupScheduler`)
+- scheduled order activation scheduler (`scheduled/order/ScheduledOrderActivationScheduler`)
 
 Pending:
 
-- scheduled order transition job
 - proposal timeout job
 - store response timeout job if needed
 

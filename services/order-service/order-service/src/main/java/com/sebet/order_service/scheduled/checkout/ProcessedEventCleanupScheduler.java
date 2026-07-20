@@ -3,6 +3,7 @@ package com.sebet.order_service.scheduled.checkout;
 import com.sebet.order_service.persistence.repository.ProcessedEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,11 @@ public class ProcessedEventCleanupScheduler {
 
     @Transactional
     @Scheduled(fixedDelayString = "${order-service.kafka.checkout-events.processed-events.cleanup-interval-ms}")
+    @SchedulerLock(
+            name = "processedCheckoutEventCleanupJob",
+            lockAtMostFor = "${order-service.kafka.checkout-events.processed-events.cleanup-lock-at-most-for}",
+            lockAtLeastFor = "${order-service.kafka.checkout-events.processed-events.cleanup-lock-at-least-for}"
+    )
     public void cleanup() {
         OffsetDateTime now = OffsetDateTime.now();
         int completed = repository.deleteCompletedOlderThan(now.minus(completedRetention));

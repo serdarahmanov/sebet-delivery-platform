@@ -66,7 +66,7 @@ com.sebet.order_service
 
 ## Implemented Boundaries
 
-- Controllers define endpoint contracts. Customer read endpoints, store read endpoints, store lifecycle write endpoints (accept, reject, ready, cancel, propose changes), driver detail/lifecycle endpoints (detail, pickup, arrive, complete, decline), internal driver assignment endpoints (assign, replace, unassign), and internal lifecycle endpoints for manual scheduled activation, system cancellation, and admin override cancellation are implemented; remaining customer writes and proposal cancellation still throw `UnsupportedOperationException`.
+- Controllers define endpoint contracts. Customer read/write endpoints, store read/write endpoints, driver detail/lifecycle endpoints (detail, pickup, arrive, complete, decline), internal driver assignment endpoints (assign, replace, unassign), internal lifecycle endpoints, and scheduled-order activation are implemented.
 - `OrderCreationService` creates durable orders, order items, and initial status history from an internal command.
 - Checkout integration DTOs model the cart-service checkout event.
 - `CheckoutConfirmedEventConsumer` listens for raw checkout event JSON, deserializes the integration envelope, and delegates processing.
@@ -83,7 +83,7 @@ com.sebet.order_service
 - `GlobalExceptionHandler` maps common controller-handled exceptions to a consistent `ErrorResponse` JSON shape. Interceptor failures are sent directly with `sendError`.
 - `DriverOrderController` and `DriverOrderLifecycleService` implement the driver detail and lifecycle path (detail, pickup, arrive, complete, decline).
 - `DriverIdInterceptor` enforces the `X-Driver-Id` header on `/api/v1/driver/**`.
-- `InternalOrderController` defines the internal service-to-service endpoint contracts. Driver assign/unassign calls are implemented through `InternalDriverAssignmentService`; manual scheduled activation, automated system cancellation, and admin override cancellation are implemented through `InternalOrderLifecycleService`; proposal-only cancellation and proposal-plus-order cancellation are still stubs.
+- `InternalOrderController` defines the internal service-to-service endpoint contracts. Driver assign/unassign calls are implemented through `InternalDriverAssignmentService`; manual scheduled activation, automated system cancellation, admin override cancellation, proposal-only cancellation, proposal-plus-order cancellation, and proposal-application callbacks are implemented through `InternalOrderLifecycleService`.
 - `InternalAuthInterceptor` enforces the `X-Internal-Key` header on `/api/v1/internal/**`.
 
 ## Planned Boundaries
