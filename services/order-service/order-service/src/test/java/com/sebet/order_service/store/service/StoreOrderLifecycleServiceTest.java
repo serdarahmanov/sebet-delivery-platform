@@ -16,6 +16,7 @@ import com.sebet.order_service.shared.idempotency.IdempotentCommandService;
 import com.sebet.order_service.store.dto.request.ProposeOrderChangesRequest;
 import com.sebet.order_service.store.dto.request.RejectOrderRequest;
 import com.sebet.order_service.store.dto.request.StoreCancelOrderRequest;
+import com.sebet.order_service.store.dto.response.StoreCancelActiveProposalResponse;
 import com.sebet.order_service.store.dto.response.StoreCancelOrderResponse;
 import com.sebet.order_service.store.dto.response.StoreProposeOrderChangesResponse;
 import com.sebet.order_service.store.dto.response.StoreRejectOrderResponse;
@@ -502,6 +503,88 @@ class StoreOrderLifecycleServiceTest {
         assertThat(response).isSameAs(storedResponse);
         verify(orderLifecycleService, never()).storeProposeChangesWithoutRedisUpdate(any(), any(), any(), any());
         verify(orderLifecycleService).updateProposeChangesRedisViews(orderId.toString(), "store-1", "idem-1");
+    }
+
+    @Test
+    void cancelActiveProposal_happyPath_verifiesStoreAndReturnsResponse() {
+        UUID orderId = UUID.randomUUID();
+        OrderEntity order = order(orderId, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        when(orderLifecycleService.storeCancelActiveProposalWithoutRedisUpdate(orderId.toString(), "store-1"))
+                .thenReturn(new OrderLifecycleResult(
+                        order,
+                        OrderStatus.AWAITING_CUSTOMER_RESPONSE,
+                        OrderStatus.CONFIRMED,
+                        OffsetDateTime.parse("2026-07-10T10:00:00Z")
+                ));
+
+        StoreCancelActiveProposalResponse response =
+                service.cancelActiveProposal("store-1", orderId.toString(), "idem-1");
+
+        assertThat(response.orderId()).isEqualTo(orderId.toString());
+        assertThat(response.status()).isEqualTo("CONFIRMED");
+        assertThat(response.cancelledAt()).isEqualTo("2026-07-10T10:00Z");
+        verify(idempotentCommandService).execute(
+                eq("STORE_CANCEL_ACTIVE_PROPOSAL"),
+                eq("idem-1"),
+                eq(orderId.toString()),
+                eq("storeId=store-1;orderId=" + orderId),
+                eq(StoreCancelActiveProposalResponse.class),
+                any()
+        );
+        verify(orderLifecycleService).storeCancelActiveProposalWithoutRedisUpdate(orderId.toString(), "store-1");
+        verify(orderLifecycleService).updateCancelActiveProposalRedisViews(orderId.toString(), "idem-1");
+    }
+
+    @Test
+    void cancelActiveProposal_wrongStoreThrowsNotFoundBeforeLifecycleMutation() {
+        UUID orderId = UUID.randomUUID();
+        when(orderLifecycleService.storeCancelActiveProposalWithoutRedisUpdate(orderId.toString(), "store-2"))
+                .thenThrow(new com.sebet.order_service.shared.exception.OrderNotFoundException(orderId.toString()));
+
+        assertThatThrownBy(() -> service.cancelActiveProposal("store-2", orderId.toString(), "idem-1"))
+                .isInstanceOf(com.sebet.order_service.shared.exception.OrderNotFoundException.class);
+
+        verify(orderLifecycleService).storeCancelActiveProposalWithoutRedisUpdate(orderId.toString(), "store-2");
+        verify(orderLifecycleService, never()).updateCancelActiveProposalRedisViews(anyString(), anyString());
+    }
+
+    @Test
+    void cancelActiveProposal_invalidStatusThrowsInvalidTransition() {
+        UUID orderId = UUID.randomUUID();
+        when(orderLifecycleService.storeCancelActiveProposalWithoutRedisUpdate(orderId.toString(), "store-1"))
+                .thenThrow(new OrderInvalidTransitionException(
+                        orderId.toString(), OrderStatus.CONFIRMED, OrderStatus.CONFIRMED));
+
+        assertThatThrownBy(() -> service.cancelActiveProposal("store-1", orderId.toString(), "idem-1"))
+                .isInstanceOf(OrderInvalidTransitionException.class);
+
+        verify(orderLifecycleService).storeCancelActiveProposalWithoutRedisUpdate(orderId.toString(), "store-1");
+        verify(orderLifecycleService, never()).updateCancelActiveProposalRedisViews(anyString(), anyString());
+    }
+
+    @Test
+    void cancelActiveProposal_idempotentReplayReturnsStoredResponseAndStillUpdatesRedis() {
+        UUID orderId = UUID.randomUUID();
+        StoreCancelActiveProposalResponse storedResponse = new StoreCancelActiveProposalResponse(
+                orderId.toString(),
+                "CONFIRMED",
+                "2026-07-10T10:00Z"
+        );
+        when(idempotentCommandService.execute(
+                eq("STORE_CANCEL_ACTIVE_PROPOSAL"),
+                eq("idem-1"),
+                eq(orderId.toString()),
+                anyString(),
+                eq(StoreCancelActiveProposalResponse.class),
+                any()
+        )).thenReturn(storedResponse);
+
+        StoreCancelActiveProposalResponse response =
+                service.cancelActiveProposal("store-1", orderId.toString(), "idem-1");
+
+        assertThat(response).isSameAs(storedResponse);
+        verify(orderLifecycleService, never()).storeCancelActiveProposalWithoutRedisUpdate(anyString(), anyString());
+        verify(orderLifecycleService).updateCancelActiveProposalRedisViews(orderId.toString(), "idem-1");
     }
 
     @Test

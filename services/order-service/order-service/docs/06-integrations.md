@@ -122,10 +122,12 @@ will remove the active proposal without cancelling the order, so a corrected
 proposal can be submitted later. `cancel-proposal-and-order` will close the
 proposal and cancel the order.
 
-Internal `cancel-active-proposal` is implemented and requires `Idempotency-Key`.
-It moves `AWAITING_CUSTOMER_RESPONSE -> CONFIRMED`, deletes the durable proposal,
-emits `OrderActiveProposalCancelled`, deletes C8, updates C4 to `CONFIRMED`, and
-removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 with one Redis Lua script.
+Store and internal `cancel-active-proposal` are implemented and require
+`Idempotency-Key`. The store endpoint also verifies `X-Store-Id` ownership. The
+action moves `AWAITING_CUSTOMER_RESPONSE -> CONFIRMED`, marks the durable
+proposal row as `CANCELLED`, emits `OrderActiveProposalCancelled`, deletes C8,
+updates C4 to `CONFIRMED`, and removes `AWAITING_CUSTOMER_RESPONSE` entries from
+C6 with one Redis Lua script.
 
 ## Frontend Clients
 
@@ -141,4 +143,4 @@ Store clients use:
 
 ## Integration Status
 
-The checkout event consumer and Redis hot-view write-through path are implemented. Customer read services are implemented. Store read services are implemented. Store `accept`, `reject`, `ready`, and `cancel` actions are implemented through the shared lifecycle service. Store `/cancel` requires `Idempotency-Key`, writes the lifecycle event and idempotent command record in the same transaction, and then uses `CANCELLED_ORDER_HOT_VIEWS` to atomically remove C1/C1b memberships and delete C2/C3/C4/C6 through the recoverable Redis fallback pattern. Driver detail and lifecycle actions (`detail`, `pickup`, `arrive`, `complete`, `decline`) are implemented through `DriverOrderLifecycleService`. Internal driver assignment actions (`assign-driver`, `unassign-driver`) are implemented through `InternalDriverAssignmentService`; internal lifecycle actions (`activate-scheduled`, `system-cancel`, `admin-cancel`, `cancel-active-proposal`) are implemented through `InternalOrderLifecycleService` and require `Idempotency-Key`. Order-created, lifecycle, proposal, and driver-assignment business events are written to `outbox_event` for Debezium publishing. Deliberate `OrderCacheEvictionRequested` events can also be consumed back by order-service to repair Redis hot views after recoverable Redis direct-update failures. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. Store `propose-changes` is implemented; store `cancel-active-proposal` and internal `cancel-proposal-and-order` are pending. The scheduled-order transition job, delivery-arrival Kafka consumer, Debezium runtime deployment, and WebSocket broker are pending.
+The checkout event consumer and Redis hot-view write-through path are implemented. Customer read and write services are implemented. Store read services are implemented. Store `accept`, `reject`, `ready`, `cancel`, `propose-changes`, and `cancel-active-proposal` actions are implemented through the shared lifecycle service. Store `/cancel`, `/propose-changes`, and `/cancel-active-proposal` require `Idempotency-Key` and use recoverable Redis hot-view update or eviction patterns after the database transaction. Driver detail and lifecycle actions (`detail`, `pickup`, `arrive`, `complete`, `decline`) are implemented through `DriverOrderLifecycleService`. Internal driver assignment actions (`assign-driver`, `unassign-driver`) are implemented through `InternalDriverAssignmentService`; internal lifecycle actions (`activate-scheduled`, `system-cancel`, `admin-cancel`, `cancel-active-proposal`, `cancel-proposal-and-order`, `update-after-proposal`) are implemented through `InternalOrderLifecycleService` and require `Idempotency-Key`. Order-created, lifecycle, proposal, and driver-assignment business events are written to `outbox_event` for Debezium publishing. Deliberate `OrderCacheEvictionRequested` events can also be consumed back by order-service to repair Redis hot views after recoverable Redis direct-update failures. `DriverIdInterceptor` and `InternalAuthInterceptor` enforce identity headers. The scheduled-order transition job, delivery tracking integration, deployment wiring, and WebSocket broker are pending.

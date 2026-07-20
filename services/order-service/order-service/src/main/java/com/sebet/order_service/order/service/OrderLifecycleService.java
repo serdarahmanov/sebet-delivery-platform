@@ -54,6 +54,7 @@ public class OrderLifecycleService {
     private static final String ACTOR_USER = "USER";
     public static final String STORE_CANCEL_ORDER_ACTION = "STORE_CANCEL_ORDER";
     public static final String STORE_PROPOSE_CHANGES_ACTION = "STORE_PROPOSE_CHANGES";
+    public static final String STORE_CANCEL_ACTIVE_PROPOSAL_ACTION = "STORE_CANCEL_ACTIVE_PROPOSAL";
     public static final String INTERNAL_ACTIVATE_SCHEDULED_ACTION = "INTERNAL_ACTIVATE_SCHEDULED";
     public static final String INTERNAL_SYSTEM_CANCEL_ACTION = "INTERNAL_SYSTEM_CANCEL";
     public static final String INTERNAL_ADMIN_CANCEL_ACTION = "INTERNAL_ADMIN_CANCEL";
@@ -733,8 +734,23 @@ public class OrderLifecycleService {
 
     @Transactional
     public OrderLifecycleResult cancelActiveProposalWithoutRedisUpdate(String orderId) {
+        return cancelActiveProposalWithoutRedisUpdate(orderId, null, ACTOR_SYSTEM);
+    }
+
+    @Transactional
+    public OrderLifecycleResult storeCancelActiveProposalWithoutRedisUpdate(String orderId, String storeId) {
+        return cancelActiveProposalWithoutRedisUpdate(orderId, storeId, ACTOR_STORE);
+    }
+
+    private OrderLifecycleResult cancelActiveProposalWithoutRedisUpdate(
+            String orderId,
+            String storeId,
+            String actorType
+    ) {
         UUID id = parseOrderId(orderId);
-        OrderEntity order = orderRepository.findById(id)
+        OrderEntity order = (storeId == null
+                ? orderRepository.findById(id)
+                : orderRepository.findByIdAndStoreId(id, storeId))
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
         OrderStatus previousStatus = order.getStatus();
@@ -756,7 +772,7 @@ public class OrderLifecycleService {
                 .orderId(savedOrder.getId())
                 .fromStatus(previousStatus)
                 .toStatus(OrderStatus.CONFIRMED)
-                .changedByType(ACTOR_SYSTEM)
+                .changedByType(actorType)
                 .reason("ACTIVE_PROPOSAL_CANCELLED")
                 .createdAt(changedAt)
                 .build());
@@ -766,7 +782,7 @@ public class OrderLifecycleService {
                 previousStatus,
                 OrderStatus.CONFIRMED,
                 changedAt,
-                ACTOR_SYSTEM,
+                actorType,
                 null,
                 "ACTIVE_PROPOSAL_CANCELLED",
                 null

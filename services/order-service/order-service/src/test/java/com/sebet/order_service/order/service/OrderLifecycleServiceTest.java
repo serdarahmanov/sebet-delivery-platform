@@ -1129,6 +1129,59 @@ class OrderLifecycleServiceTest {
     }
 
     @Test
+    void storeCancelActiveProposal_verifiesStoreAndRecordsStoreActor() {
+        UUID id = UUID.randomUUID();
+        OrderEntity order = order(id, OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        OrderProposalEntity proposal = OrderProposalEntity.builder()
+                .id(UUID.randomUUID())
+                .orderId(id)
+                .storeId("store-1")
+                .proposedAt(OffsetDateTime.parse("2026-07-09T10:00:00Z"))
+                .itemsJson("[{\"productId\":\"p1\"}]")
+                .build();
+        when(orderRepository.findByIdAndStoreId(id, "store-1")).thenReturn(Optional.of(order));
+        when(orderProposalRepository.findByOrderId(id)).thenReturn(Optional.of(proposal));
+        when(orderRepository.saveAndFlush(order)).thenReturn(order);
+        when(orderProposalRepository.saveAndFlush(proposal)).thenReturn(proposal);
+
+        OrderLifecycleResult result = service.storeCancelActiveProposalWithoutRedisUpdate(id.toString(), "store-1");
+
+        assertThat(result.previousStatus()).isEqualTo(OrderStatus.AWAITING_CUSTOMER_RESPONSE);
+        assertThat(result.newStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(proposal.getStatus()).isEqualTo(ProposalStatus.CANCELLED);
+
+        ArgumentCaptor<OrderStatusHistoryEntity> historyCaptor =
+                ArgumentCaptor.forClass(OrderStatusHistoryEntity.class);
+        verify(orderStatusHistoryRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getChangedByType()).isEqualTo("STORE");
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo("ACTIVE_PROPOSAL_CANCELLED");
+
+        verify(orderEventOutboxWriter).saveOrderStatusTransition(
+                order,
+                OrderStatus.AWAITING_CUSTOMER_RESPONSE,
+                OrderStatus.CONFIRMED,
+                result.changedAt(),
+                "STORE",
+                null,
+                "ACTIVE_PROPOSAL_CANCELLED",
+                null
+        );
+    }
+
+    @Test
+    void storeCancelActiveProposal_wrongStoreThrowsNotFound() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdAndStoreId(id, "store-2")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.storeCancelActiveProposalWithoutRedisUpdate(id.toString(), "store-2"))
+                .isInstanceOf(OrderNotFoundException.class);
+
+        verify(orderProposalRepository, never()).findByOrderId(any());
+        verify(orderRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void cancelActiveProposal_rejectsOrderWithoutActiveProposalStatus() {
         UUID id = UUID.randomUUID();
         when(orderRepository.findById(id)).thenReturn(Optional.of(order(id, OrderStatus.CONFIRMED)));

@@ -123,12 +123,12 @@ AWAITING_CUSTOMER_RESPONSE
   -> CANCELLED
 ```
 
-Proposal cancellation has two distinct pending endpoint families:
+Proposal cancellation has two distinct endpoint families:
 
-- internal `cancel-active-proposal` removes the active proposal without cancelling the order, moves the order back to `CONFIRMED`, deletes C8, updates C4, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 so a corrected proposal can be submitted later.
+- store/internal `cancel-active-proposal` removes the active proposal without cancelling the order, moves the order back to `CONFIRMED`, deletes C8, updates C4, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 so a corrected proposal can be submitted later.
 - `cancel-proposal-and-order` removes the active proposal and cancels the order.
 
-The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response, internal proposal cancellation, proposal timeout cancellation, and promo-service proposal application are implemented.
+The `CONFIRMED -> AWAITING_CUSTOMER_RESPONSE` transition is implemented. Customer response, proposal cancellation, proposal timeout cancellation, and promo-service proposal application are implemented.
 
 ## Cancellation Paths
 

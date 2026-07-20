@@ -18,6 +18,7 @@ import com.sebet.order_service.store.dto.request.ProposeOrderChangesRequest;
 import com.sebet.order_service.store.dto.request.RejectOrderRequest;
 import com.sebet.order_service.store.dto.request.StoreCancelOrderRequest;
 import com.sebet.order_service.store.dto.response.StoreAcceptOrderResponse;
+import com.sebet.order_service.store.dto.response.StoreCancelActiveProposalResponse;
 import com.sebet.order_service.store.dto.response.StoreCancelOrderResponse;
 import com.sebet.order_service.store.dto.response.StoreProposeOrderChangesResponse;
 import com.sebet.order_service.store.dto.response.StoreReadyOrderResponse;
@@ -41,6 +42,8 @@ public class StoreOrderLifecycleService {
 
     private static final String STORE_CANCEL_ORDER_ACTION = OrderLifecycleService.STORE_CANCEL_ORDER_ACTION;
     private static final String STORE_PROPOSE_CHANGES_ACTION = OrderLifecycleService.STORE_PROPOSE_CHANGES_ACTION;
+    private static final String STORE_CANCEL_ACTIVE_PROPOSAL_ACTION =
+            OrderLifecycleService.STORE_CANCEL_ACTIVE_PROPOSAL_ACTION;
 
     private final OrderLifecycleService orderLifecycleService;
     private final OrderRepository orderRepository;
@@ -150,6 +153,31 @@ public class StoreOrderLifecycleService {
         return response;
     }
 
+    public StoreCancelActiveProposalResponse cancelActiveProposal(
+            String storeId,
+            String orderId,
+            String idempotencyKey
+    ) {
+        StoreCancelActiveProposalResponse response = idempotentCommandService.execute(
+                STORE_CANCEL_ACTIVE_PROPOSAL_ACTION,
+                idempotencyKey,
+                orderId,
+                cancelActiveProposalFingerprint(storeId, orderId),
+                StoreCancelActiveProposalResponse.class,
+                () -> {
+                    OrderLifecycleResult result =
+                            orderLifecycleService.storeCancelActiveProposalWithoutRedisUpdate(orderId, storeId);
+                    return new StoreCancelActiveProposalResponse(
+                            orderId,
+                            result.newStatus().name(),
+                            result.changedAt().toString()
+                    );
+                }
+        );
+        orderLifecycleService.updateCancelActiveProposalRedisViews(orderId, idempotencyKey);
+        return response;
+    }
+
     private String buildAndValidateProposalItems(
             String orderId,
             ProposeOrderChangesRequest request,
@@ -226,6 +254,10 @@ public class StoreOrderLifecycleService {
                             + c.requestedQuantity() + ":" + c.unit() + ":" + c.availableQuantity())
                     .sorted()
                     .collect(Collectors.joining(","));
+    }
+
+    private String cancelActiveProposalFingerprint(String storeId, String orderId) {
+        return "storeId=" + storeId + ";orderId=" + orderId;
     }
 
     private OrderCancellationReason toCancellationReason(RejectOrderRequest.RejectionReason reason) {

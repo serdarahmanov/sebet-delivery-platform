@@ -4,11 +4,9 @@ This file tracks behavior that is designed in the docs and DTOs but not implemen
 
 ## Service Layer
 
-Many controller methods still throw:
-
-```text
-UnsupportedOperationException("Not implemented yet")
-```
+The REST write endpoints are implemented. Remaining service-layer work is now
+mostly background jobs, delivery tracking integration, deployment wiring, and
+future refund/settlement behavior.
 
 Implemented:
 
@@ -82,6 +80,10 @@ Implemented:
   - marks the proposal row as `CANCELLED` (retained for audit; not deleted)
   - reserves the idempotency key, appends status history, emits `OrderActiveProposalCancelled`, and stores the completed idempotent response
   - atomically deletes C8, updates C4 to `CONFIRMED`, and removes `AWAITING_CUSTOMER_RESPONSE` entries from C6 via `cancelActiveProposalRedisUpdateScript`; recoverable Redis failures fall back to `CANCEL_ACTIVE_PROPOSAL_HOT_VIEWS`
+- `StoreOrderLifecycleService.cancelActiveProposal` implements `POST /api/v1/store/orders/{orderId}/cancel-active-proposal`:
+  - verifies that the order belongs to `X-Store-Id`
+  - requires `AWAITING_CUSTOMER_RESPONSE`
+  - reserves a store-scoped idempotency key, reuses the shared cancel-active-proposal transition, and retries the Redis update on idempotent replay
 - `InternalOrderLifecycleService.cancelProposalAndOrder` implements `POST /api/v1/internal/orders/{orderId}/cancel-proposal-and-order`:
   - transitions `AWAITING_CUSTOMER_RESPONSE -> CANCELLED`
   - marks the proposal row as `TIMED_OUT` (retained for audit; not deleted)

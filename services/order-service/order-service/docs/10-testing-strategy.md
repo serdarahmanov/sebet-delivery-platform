@@ -117,8 +117,8 @@ Add unit tests for:
 - Redis repository serialization/deserialization
 - active-order removal Lua behavior
 - lock release Lua behavior
-- customer write service behavior when implemented
-- remaining proposal cancellation behavior when implemented: store `cancel-active-proposal` and internal `cancel-proposal-and-order`
+- scheduled and timeout background job behavior when implemented
+- delivery tracking event consumption when implemented
 - `OrderLifecycleRedisUpdater` for `OUT_FOR_DELIVERY`, `ARRIVED`, and `DELIVERED` transitions
 
 ## Controller Tests To Add
@@ -127,7 +127,7 @@ Add controller tests for:
 
 - request validation
 - route mappings
-- status code mappings, especially `404`, `409`, and `501`
+- status code mappings, especially `404` and `409`
 
 ## Integration Tests To Add
 
